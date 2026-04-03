@@ -302,7 +302,30 @@ llamaseye.sh --model model.gguf --start-threads 8 --threads-dir down
 
 **Behaviour when start value is not in the list:** A warning is logged and the full list in the given direction is used — the sweep never aborts due to a missing start point.
 
-**Interaction with Phase 7 (Combination Matrix):** Start points and directions only apply to the single-axis phases (1–6). Phase 7 always uses the complete set of working values discovered in those phases, regardless of which start point was used. This ensures the combination matrix is still exhaustive over the viable values — it is not artificially restricted by the user's chosen starting point.
+### Phase 7 Working Set Inheritance
+
+Phase 7 **always uses exactly the values that phases 1–6 actually tested** — not the full possible list of values. This means `--start-*` and `--*-dir` flags naturally narrow Phase 7 as well, because they narrow what phases 1–6 discover.
+
+For example:
+- `--start-ctk q8_0 --ctk-dir up` → Phase 2 only tests `q8_0`, `f16`, and turbo types. Phase 7 inherits exactly that set — `f16` and `q4_0` never appear in the matrix.
+- `--start-ctx 65536 --ctx-dir up` → Phase 6 only discovers `65536` and `131072`. Phase 7 never combines smaller contexts.
+
+This means you often **don't need `--min-*` flags at all** — just set your start points correctly and Phase 7 follows automatically.
+
+`--min-*` flags exist as an additional explicit filter for cases where you want phases 1–6 to still run full discovery (for the per-axis data) but want Phase 7 to only combine a specific subset:
+
+| Flag | Filters from Phase 7 | Threshold |
+|------|----------------------|-----------|
+| `--min-ngl N` | ngl values < N | numeric |
+| `--min-threads N` | thread counts < N | numeric |
+| `--min-ctx N` | context sizes < N | numeric |
+| `--min-ctk TYPE` | KV types below TYPE in quality order | ordered |
+| `--min-b N` | batch sizes < N | numeric |
+| `--min-ub N` | ubatch sizes < N | numeric |
+
+**KV quality order** (low → high): `turbo2 → turbo3 → turbo4 → q4_0 → q8_0 → f16`
+
+`--min-ctk q8_0` keeps only `q8_0` and `f16` in Phase 7, dropping all turbo types and `q4_0`.
 
 Thread sweep values are generated dynamically from `HW_CPU_PHYSICAL` and
 `HW_CPU_LOGICAL` at runtime. For example, on an 8C/16T machine the list
@@ -1102,6 +1125,19 @@ Utility:
   --ub-dir up|down      Ubatch size direction. Default: up.
   --start-fa 0|1        Begin FA sweep at 0 (off) or 1 (on). Default: 0.
   --fa-dir up|down      FA sweep direction: up=0->1, down=1->0. Default: up.
+
+Phase 7 minimum thresholds (filter combination matrix inputs):
+  --min-ngl N           Exclude ngl values below N from Phase 7.
+  --min-threads N       Exclude thread counts below N from Phase 7.
+  --min-ctx N           Exclude context sizes below N from Phase 7.
+  --min-ctk TYPE        Exclude KV types below TYPE (quality order) from Phase 7.
+                        Quality order lowâhigh: turbo2 turbo3 turbo4 q4_0 q8_0 f16
+  --min-b N             Exclude batch sizes below N from Phase 7.
+  --min-ub N            Exclude ubatch sizes below N from Phase 7.
+
+  Tip: --start-* flags already narrow Phase 7 naturally. Use --min-* only when
+  you want full per-axis discovery in phases 1-6 but a tighter Phase 7.
+
   -h, --help                 Print usage and exit.
 ```
 

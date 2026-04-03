@@ -130,6 +130,18 @@ OPT_DIR_B="up"                # --b-dir up|down       (up = 512->2048)
 OPT_DIR_UB="up"               # --ub-dir up|down      (up = 128->512)
 OPT_DIR_FA="up"               # --fa-dir up|down      (up = 0->1)
 
+# --- Phase 7 minimum thresholds (filter combination matrix inputs) ---
+# These trim the per-axis working sets before Phase 7. For numeric axes,
+# values strictly below the minimum are excluded. For ctk, types below
+# the minimum in quality order are excluded.
+# KV quality order (low->high): turbo2 turbo3 turbo4 q4_0 q8_0 f16
+OPT_MIN_NGL=""                # --min-ngl N
+OPT_MIN_THREADS=""            # --min-threads N
+OPT_MIN_CTX=""                # --min-ctx N
+OPT_MIN_CTK=""                # --min-ctk TYPE
+OPT_MIN_B=""                  # --min-b N
+OPT_MIN_UB=""                 # --min-ub N
+
 
 # =============================================================================
 # FUNCTIONS
@@ -222,6 +234,20 @@ Axis start points & directions:
   --ub-dir up|down      Sweep direction (default: up = 128->512).
   --start-fa 0|1        Begin FA sweep at this value (0=off, 1=on). Default: 0.
   --fa-dir up|down      FA sweep direction: up=0->1, down=1->0. Default: up.
+
+Phase 7 minimum thresholds:
+  --min-ngl N           Exclude ngl values below N from Phase 7 matrix.
+  --min-threads N       Exclude thread counts below N from Phase 7 matrix.
+  --min-ctx N           Exclude context sizes below N from Phase 7 matrix.
+  --min-ctk TYPE        Exclude KV types below TYPE (quality order) from Phase 7.
+                        Quality order (low->high): turbo2 turbo3 turbo4 q4_0 q8_0 f16
+                        e.g. --min-ctk q8_0 keeps only q8_0 and f16.
+  --min-b N             Exclude batch sizes below N from Phase 7 matrix.
+  --min-ub N            Exclude ubatch sizes below N from Phase 7 matrix.
+
+  Note: Phase 7 always inherits the values actually tested in phases 1-6
+  (which are already trimmed by --start-* and --*-dir flags). Use --min-*
+  for additional explicit filtering on top of that.
 
   --dry-run             Print bench commands without executing them
   --no-confirm          Skip the pre-sweep confirmation prompt
@@ -352,6 +378,24 @@ parse_args() {
                 [[ $# -lt 2 ]] && die "--ub-dir requires up or down"
                 [[ "$2" != "up" && "$2" != "down" ]] && die "--ub-dir must be 'up' or 'down'"
                 OPT_DIR_UB="$2"; shift 2 ;;
+            --min-ngl)
+                [[ $# -lt 2 ]] && die "--min-ngl requires an argument"
+                OPT_MIN_NGL="$2"; shift 2 ;;
+            --min-threads)
+                [[ $# -lt 2 ]] && die "--min-threads requires an argument"
+                OPT_MIN_THREADS="$2"; shift 2 ;;
+            --min-ctx)
+                [[ $# -lt 2 ]] && die "--min-ctx requires an argument"
+                OPT_MIN_CTX="$2"; shift 2 ;;
+            --min-ctk)
+                [[ $# -lt 2 ]] && die "--min-ctk requires an argument"
+                OPT_MIN_CTK="$2"; shift 2 ;;
+            --min-b)
+                [[ $# -lt 2 ]] && die "--min-b requires an argument"
+                OPT_MIN_B="$2"; shift 2 ;;
+            --min-ub)
+                [[ $# -lt 2 ]] && die "--min-ub requires an argument"
+                OPT_MIN_UB="$2"; shift 2 ;;
 
             --start-fa)
                 [[ $# -lt 2 ]] && die "--start-fa requires 0 or 1"
@@ -736,6 +780,62 @@ apply_axis_opts() {
     fi
 }
 
+# apply_phase7_mins AXIS VALUES MIN_VALUE
+#
+# Filters a newline-separated list of working values, removing entries that
+# fall below the given minimum threshold. Used to trim working sets before
+# building the Phase 7 combination matrix.
+#
+# For numeric axes (ngl, threads, ctx, b, ub): removes values strictly < MIN_VALUE.
+# For the KV type axis (ctk): removes types below MIN_VALUE in quality order.
+#   KV quality order (low->high): turbo2 turbo3 turbo4 q4_0 q8_0 f16
+#
+# If MIN_VALUE is empty, the full list is returned unchanged.
+# If MIN_VALUE is not recognised (ctk axis), a warning is logged and the list
+# is returned unchanged.
+#
+# Arguments:
+#   $1  axis:   "ngl" | "threads" | "ctx" | "b" | "ub" | "ctk"
+#   $2  values: newline-separated working value list
+#   $3  min:    minimum value string (may be empty)
+apply_phase7_mins() {
+    local axis="$1"
+    local values="$2"
+    local min_val="$3"
+
+    if [[ -z "${min_val}" ]]; then
+        echo "${values}"
+        return 0
+    fi
+
+    if [[ "${axis}" == "ctk" ]]; then
+        local -a ctk_order=("turbo2" "turbo3" "turbo4" "q4_0" "q8_0" "f16")
+        local min_idx=-1 i
+        for i in "${!ctk_order[@]}"; do
+            [[ "${ctk_order[$i]}" == "${min_val}" ]] && { min_idx=$i; break; }
+        done
+        if [[ $min_idx -eq -1 ]]; then
+            warn "Unknown --min-ctk value '${min_val}' â no filtering applied"
+            echo "${values}"; return 0
+        fi
+        local val
+        while IFS= read -r val; do
+            [[ -z "${val}" ]] && continue
+            local val_idx=-1
+            for i in "${!ctk_order[@]}"; do
+                [[ "${ctk_order[$i]}" == "${val}" ]] && { val_idx=$i; break; }
+            done
+            (( val_idx >= min_idx )) && echo "${val}"
+        done <<< "${values}"
+    else
+        local val
+        while IFS= read -r val; do
+            [[ -z "${val}" ]] && continue
+            (( val >= min_val )) && echo "${val}"
+        done <<< "${values}"
+    fi
+}
+
 # -----------------------------------------------------------------------------
 # phase0_ngl_probe
 #   Algorithm: binary-search the maximum NGL that fits without OOM.
@@ -892,6 +992,24 @@ phase6_ctx_sweep() {
 # -----------------------------------------------------------------------------
 phase7_combination_matrix() {
     log "[Phase 7] Combination matrix sweep"
+
+    # Phase 7 uses exactly the values that phases 1-6 actually tested.
+    # --start-* and --*-dir flags already trimmed those phases, so the
+    # working sets here naturally reflect the user's sweep choices.
+    #
+    # Additionally, --min-* flags can further filter these sets:
+    #
+    # ngl_p7=$(apply_phase7_mins "ngl"     "${working_ngl}"     "${OPT_MIN_NGL}")
+    # thr_p7=$(apply_phase7_mins "threads" "${working_threads}" "${OPT_MIN_THREADS}")
+    # ctx_p7=$(apply_phase7_mins "ctx"     "${working_ctx}"     "${OPT_MIN_CTX}")
+    # ctk_p7=$(apply_phase7_mins "ctk"     "${working_ctk}"     "${OPT_MIN_CTK}")
+    # b_p7=$(apply_phase7_mins   "b"       "${working_b}"       "${OPT_MIN_B}")
+    # ub_p7=$(apply_phase7_mins  "ub"      "${working_ub}"       "${OPT_MIN_UB}")
+    #
+    # Log what was filtered:
+    # log "[PHASE 7] Working sets after minimums: ngl=${ngl_count} ctx=${ctx_count} ctk=${ctk_count}"
+    # log "[PHASE 7] Estimated combinations: ${total_estimate}"
+
     # TODO: implement cartesian product + pruning described above
 }
 
