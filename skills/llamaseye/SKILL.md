@@ -159,6 +159,40 @@ table in the Phase 7 section showing max successful context per (ngl, ctk, nkvo)
 
 ---
 
+## Configuration via .env
+
+All environment variables can be persisted in a `.env` file so you don't have to
+repeat paths and settings on every invocation. The repo includes `example.env`
+documenting every variable.
+
+```sh
+# One-time setup on the inference host
+cp example.env .env
+# Edit .env to set your paths, then source before running:
+source .env && bash llamaseye.sh --models-dir ~/Models --output-dir ~/Models/bench/sweep
+```
+
+`.env` is gitignored — local paths are never committed.
+
+### Key variables to set
+
+| Variable | What it controls | Example |
+|----------|-----------------|----------|
+| `LLAMA_BENCH_BIN` | Path to the standard llama-bench binary | `~/llama.cpp/build/bin/llama-bench` |
+| `SWEEP_TURBO_BENCH_BIN` | Path to TurboQuant binary (optional) | `~/llama-cpp-turboquant/build/bin/llama-bench` |
+| `SWEEP_MODELS_DIR` | Directory scanned for .gguf files | `~/Models` |
+| `SWEEP_OUTPUT_DIR` | Root directory for all sweep results | `~/Models/bench/sweep` |
+| `SWEEP_NGL_STEP` | Layer step size for NGL sweep | `4` (use `2` near VRAM edge) |
+| `SWEEP_REPETITIONS` | Benchmark reps per run (`-r`) | `3` |
+| `SWEEP_TIMEOUT_SEC` | Per-run kill timeout (seconds) | `600` |
+| `SWEEP_MIN_TG_TS` | Minimum TG t/s to mark a config viable | `2.0` |
+| `SWEEP_CPU_TEMP_LIMIT` | CPU °C ceiling before sweep pauses | `88` |
+| `SWEEP_GPU_TEMP_LIMIT` | GPU °C ceiling before sweep pauses | `81` |
+
+CLI flags always override environment variables when both are set.
+
+---
+
 ## Prerequisites & Deployment
 
 ### Step 1 — Detect the hardware before building anything
