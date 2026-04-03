@@ -1,0 +1,14 @@
+# Benchmark results (large, machine-specific)
+results/*/raw/
+results/*/*.jsonl
+results/*/*.log
+!results/*/*.md
+!results/*/hardware.json
+!results/*/state.json
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
