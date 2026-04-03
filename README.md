@@ -45,17 +45,60 @@ nohup bash llamaseye.sh --models-dir ~/Models --output-dir ./results > /dev/null
 
 ## Dependencies
 
-| Dependency | Notes |
-|------------|-------|
-| `llama-bench` | Standard llama.cpp build |
-| `nvidia-smi` | NVIDIA GPU thermal monitoring |
-| `sensors` / `lm-sensors` | Linux CPU temperature reading |
-| `jq` | JSON processing |
-| `timeout` | Run-level timeout enforcement |
-| `uuidgen` | Unique run IDs |
+### llama-bench (required)
 
-**Optional:** TurboQuant build of llama-bench from
-[github.com/TheTom/llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant) branch `feature/turboquant-kv-cache`.
+llamaseye does not install or build llama-bench for you. You must build it yourself from [llama.cpp](https://github.com/ggml-org/llama.cpp) with whatever backend flags suit your hardware **before** running llamaseye.
+
+```sh
+# Clone llama.cpp
+git clone https://github.com/ggml-org/llama.cpp
+cd llama.cpp
+
+# Build for CUDA (NVIDIA GPU)
+cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target llama-bench -j$(nproc)
+
+# Build for Metal (macOS — Apple Silicon or Intel Mac)
+cmake -B build -DGGML_METAL=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target llama-bench -j$(sysctl -n hw.logicalcpu)
+
+# Build CPU-only (any platform, no GPU)
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target llama-bench -j$(nproc)
+```
+
+The binary will be at `build/bin/llama-bench`. Pass its path to llamaseye via `--llama-bench <path>` or set the `LLAMA_BENCH_BIN` environment variable. The default assumed path is `~/llama.cpp/build/bin/llama-bench`.
+
+> The build flags you choose determine which backends and features are available during the sweep. llamaseye works with any valid llama-bench binary — it does not require any specific build flags itself.
+
+### Optional: TurboQuant llama-bench
+
+To enable `turbo2`/`turbo3`/`turbo4` KV cache types, build a second binary from the [llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant) fork (branch `feature/turboquant-kv-cache`) and pass it via `--turbo-bench <path>`. The fork is otherwise identical to llama.cpp — same build flags apply.
+
+```sh
+git clone https://github.com/TheTom/llama-cpp-turboquant \
+  --branch feature/turboquant-kv-cache --depth=1
+cd llama-cpp-turboquant
+cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target llama-bench -j$(nproc)
+
+# Verify TurboQuant compiled in:
+./build/bin/llama-bench --help 2>&1 | grep turbo
+# Must print: turbo2, turbo3, turbo4 — if nothing shows, wrong branch was cloned
+```
+
+### Other dependencies
+
+| Tool | Purpose | Install |
+|------|---------|---------|
+| `jq` | JSON record processing | `apt install jq` / `brew install jq` |
+| `timeout` | Per-run kill timeout | Built into GNU coreutils (Linux); `brew install coreutils` on macOS |
+| `uuidgen` | Unique run IDs | Pre-installed on macOS; `apt install uuid-runtime` on Linux |
+| `nvidia-smi` | NVIDIA GPU detection and thermal monitoring | Included with NVIDIA drivers |
+| `sensors` | Linux CPU temperature reading | `apt install lm-sensors` |
+| `osx-cpu-temp` | macOS CPU temperature reading (optional) | `brew install osx-cpu-temp` |
+
+`nvidia-smi`, `sensors`, and `osx-cpu-temp` are only needed for thermal monitoring. If they are absent, llamaseye disables the thermal guard for that sensor and logs a warning — the sweep still runs.
 
 ---
 
