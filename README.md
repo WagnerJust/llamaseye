@@ -1,4 +1,4 @@
-# llama-bench-sweep — Exhaustive llama-bench parameter sweep harness
+# llamaseye — Exhaustive llama-bench parameter sweep harness
 
 Systematically sweep every meaningful llama-bench parameter combination for any GGUF model, record every result as JSONL, and surface the optimal configuration for your hardware.
 
@@ -6,7 +6,7 @@ Systematically sweep every meaningful llama-bench parameter combination for any 
 
 ## What it does
 
-**llama-bench-sweep** runs llama-bench across every meaningful parameter combination for any GGUF model. It sweeps each axis independently — GPU layer offload (ngl), flash attention, KV cache quantisation type, thread count, KV offload ratio, batch size, and context size — then runs a full combination matrix (Phase 7) to confirm which configs work together and find the true performance ceiling.
+**llamaseye** runs llama-bench across every meaningful parameter combination for any GGUF model. It sweeps each axis independently — GPU layer offload (ngl), flash attention, KV cache quantisation type, thread count, KV offload ratio, batch size, and context size — then runs a full combination matrix (Phase 7) to confirm which configs work together and find the true performance ceiling.
 
 Every result is recorded as JSONL in a per-model output directory, alongside a human-readable Markdown summary, a raw log, a hardware snapshot, and a resume-state file. Runs that trigger an OOM or timeout are caught, logged, and skipped — the sweep never hangs.
 
@@ -18,27 +18,27 @@ The script is fully portable: it detects CPU core count, available RAM, GPU VRAM
 
 **Single model:**
 ```bash
-bash llama_bench_sweep.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ./results
+bash llamaseye.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ./results
 ```
 
 **All models in a directory:**
 ```bash
-bash llama_bench_sweep.sh --models-dir ~/Models --output-dir ./results
+bash llamaseye.sh --models-dir ~/Models --output-dir ./results
 ```
 
 **From a model list file:**
 ```bash
-bash llama_bench_sweep.sh --models-dir ~/Models --model-list my_models.txt --output-dir ./results
+bash llamaseye.sh --models-dir ~/Models --model-list my_models.txt --output-dir ./results
 ```
 
 **With TurboQuant KV types:**
 ```bash
-bash llama_bench_sweep.sh --model ~/Models/model.gguf --turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench
+bash llamaseye.sh --model ~/Models/model.gguf --turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench
 ```
 
 **Unattended overnight run:**
 ```bash
-nohup bash llama_bench_sweep.sh --models-dir ~/Models --output-dir ./results > /dev/null 2>&1 &
+nohup bash llamaseye.sh --models-dir ~/Models --output-dir ./results > /dev/null 2>&1 &
 ```
 
 ---

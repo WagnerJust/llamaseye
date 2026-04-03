@@ -1,4 +1,4 @@
-# llama-bench-sweep model list
+# llamaseye model list
 # One model per line. Entries can be:
 #   - An absolute path:   /home/user/Models/model.gguf
 #   - A filename only:    model.gguf  (resolved against --models-dir)

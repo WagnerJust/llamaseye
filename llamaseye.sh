@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# llama_bench_sweep.sh — Exhaustive llama-bench parameter sweep harness
+# llamaseye.sh — Exhaustive llama-bench parameter sweep harness
 # =============================================================================
 # Version : 0.1.0
 # Purpose : Systematically benchmark every meaningful llama-bench parameter
@@ -17,8 +17,8 @@
 #   6  ctx_sweep        — context length 512..max-stable
 #   7  combination_matrix — cartesian product of best candidates, pruned
 #
-# Usage : llama_bench_sweep.sh [OPTIONS]
-# See   : llama_bench_sweep.sh --help
+# Usage : llamaseye.sh [OPTIONS]
+# See   : llamaseye.sh --help
 # =============================================================================
 
 set -euo pipefail
@@ -151,10 +151,10 @@ die() {
 # -----------------------------------------------------------------------------
 usage() {
     cat <<EOF
-llama_bench_sweep.sh v0.1.0 — exhaustive llama-bench parameter sweep harness
+llamaseye.sh v0.1.0 — exhaustive llama-bench parameter sweep harness
 
 USAGE
-  llama_bench_sweep.sh [OPTIONS]
+  llamaseye.sh [OPTIONS]
 
 MODEL SELECTION (at least one required)
   --model PATH          Benchmark a single .gguf file
@@ -204,13 +204,13 @@ PHASES
 
 EXAMPLES
   # Benchmark one model with defaults
-  llama_bench_sweep.sh --model ~/Models/mistral-7b-q4_k_m.gguf
+  llamaseye.sh --model ~/Models/mistral-7b-q4_k_m.gguf
 
   # Benchmark all models in a directory, resuming a prior run
-  llama_bench_sweep.sh --models-dir ~/Models --output-dir ~/bench --resume
+  llamaseye.sh --models-dir ~/Models --output-dir ~/bench --resume
 
   # Dry-run only phases 0 and 2
-  llama_bench_sweep.sh --model ~/Models/foo.gguf --only-phases 0,2 --dry-run
+  llamaseye.sh --model ~/Models/foo.gguf --only-phases 0,2 --dry-run
 EOF
     exit 0
 }

@@ -835,7 +835,7 @@ size per (ngl, ctk, nkvo) triple.
 
 ## Script Architecture
 
-Single Bash script: `llama_bench_sweep.sh`
+Single Bash script: `llamaseye.sh`
 
 ### Required external tools
 
@@ -952,13 +952,13 @@ The script accepts models in three ways. Use whichever fits the situation:
 
 ```sh
 # 1. Single model by path
-bash llama_bench_sweep.sh --model /path/to/model.gguf
+bash llamaseye.sh --model /path/to/model.gguf
 
 # 2. All .gguf files in a directory (alphabetical order)
-bash llama_bench_sweep.sh --models-dir ~/Models
+bash llamaseye.sh --models-dir ~/Models
 
 # 3. A specific subset — provide a text file, one model name or path per line
-bash llama_bench_sweep.sh --models-dir ~/Models --model-list ~/my_models.txt
+bash llamaseye.sh --models-dir ~/Models --model-list ~/my_models.txt
 ```
 
 The `--model-list` file format: one entry per line. Entries can be:
@@ -982,29 +982,29 @@ simultaneously on the same GPU produces meaningless results.
 
 ```sh
 # Sweep a single model
-bash llama_bench_sweep.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf
+bash llamaseye.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf
 
 # Sweep all models in a directory, output to custom dir
-bash llama_bench_sweep.sh --models-dir ~/Models --output-dir ~/bench_results
+bash llamaseye.sh --models-dir ~/Models --output-dir ~/bench_results
 
 # Sweep a curated list of models
-bash llama_bench_sweep.sh --models-dir ~/Models --model-list ~/bench_list.txt
+bash llamaseye.sh --models-dir ~/Models --model-list ~/bench_list.txt
 
 # Run unattended overnight, follow progress
-nohup bash llama_bench_sweep.sh --models-dir ~/Models --output-dir ~/bench_results > /dev/null 2>&1 &
+nohup bash llamaseye.sh --models-dir ~/Models --output-dir ~/bench_results > /dev/null 2>&1 &
 tail -f ~/bench_results/sweep.log
 
 # Resume all incomplete sweeps in an output dir
-bash llama_bench_sweep.sh --models-dir ~/Models --output-dir ~/bench_results --resume
+bash llamaseye.sh --models-dir ~/Models --output-dir ~/bench_results --resume
 
 # Run only specific phases (e.g. re-run Phase 6 and 7 for one model)
-bash llama_bench_sweep.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --only-phases 6,7
+bash llamaseye.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --only-phases 6,7
 
 # Finer ngl step for a model right at the VRAM edge
-bash llama_bench_sweep.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --ngl-step 2
+bash llamaseye.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --ngl-step 2
 
 # Dry run — print hardware detection + all planned commands without executing
-bash llama_bench_sweep.sh --models-dir ~/Models --dry-run
+bash llamaseye.sh --models-dir ~/Models --dry-run
 ```
 
 ### CLI flags reference
