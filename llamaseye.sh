@@ -109,6 +109,26 @@ OPT_ONLY_PHASES=""           # --only-phases: comma-separated phase numbers
 OPT_SKIP_PHASES=""           # --skip-phases: comma-separated phase numbers
 OPT_MODEL_LIST_FILE=""       # --model-list: path to file with one model/line
 
+# --- Sweep axis start points (default: begin of list for each axis) ---
+OPT_START_NGL=""              # --start-ngl N: begin ngl sweep at this value
+OPT_START_THREADS=""          # --start-threads N: begin thread sweep at this value
+OPT_START_CTX=""              # --start-ctx N: begin context sweep at this prompt size
+OPT_START_CTK=""              # --start-ctk TYPE: begin KV quant sweep at this type
+OPT_START_B=""                # --start-b N: begin batch sweep at this b value
+OPT_START_UB=""               # --start-ub N: begin ubatch sweep at this ub value
+
+# --- Sweep axis directions ---
+# "up"   = sweep from start toward the high end of the list
+# "down" = sweep from start toward the low end of the list
+# KV type ordering (low->high compression): f16 q8_0 q4_0 turbo4 turbo3 turbo2
+OPT_DIR_NGL="up"              # --ngl-dir up|down     (up = 0->max_ngl)
+OPT_DIR_THREADS="up"          # --threads-dir up|down (up = 1->HW_CPU_LOGICAL)
+OPT_DIR_CTX="up"              # --ctx-dir up|down     (up = 128->131072)
+OPT_DIR_CTK="up"              # --ctk-dir up|down     (up = toward more compression)
+OPT_DIR_B="up"                # --b-dir up|down       (up = 512->2048)
+OPT_DIR_UB="up"               # --ub-dir up|down      (up = 128->512)
+
+
 # =============================================================================
 # FUNCTIONS
 # =============================================================================
@@ -183,6 +203,22 @@ EXECUTION CONTROL
   --overwrite           Delete existing output dir before starting
   --only-phases LIST    Run only these phases (comma-separated, e.g. 0,2,5)
   --skip-phases LIST    Skip these phases (comma-separated)
+
+Axis start points & directions:
+  --start-ngl N         Begin ngl sweep at this value instead of 0 or max.
+  --ngl-dir up|down     Sweep direction from start (default: up = 0->max_ngl).
+  --start-threads N     Begin thread count sweep at this value.
+  --threads-dir up|down Sweep direction (default: up = 1->HW_CPU_LOGICAL).
+  --start-ctx N         Begin context sweep at this prompt size.
+  --ctx-dir up|down     Sweep direction (default: up = 128->131072).
+  --start-ctk TYPE      Begin KV quant sweep at this type.
+                        Ordering (up=more compression): f16 q8_0 q4_0 turbo4 turbo3 turbo2
+  --ctk-dir up|down     Sweep direction through KV type list (default: up).
+  --start-b N           Begin batch size sweep at this value.
+  --b-dir up|down       Sweep direction (default: up = 512->2048).
+  --start-ub N          Begin ubatch size sweep at this value.
+  --ub-dir up|down      Sweep direction (default: up = 128->512).
+
   --dry-run             Print bench commands without executing them
   --no-confirm          Skip the pre-sweep confirmation prompt
 
@@ -270,6 +306,49 @@ parse_args() {
             --skip-phases)
                 [[ $# -lt 2 ]] && die "--skip-phases requires an argument"
                 OPT_SKIP_PHASES="$2"; shift 2 ;;
+            --start-ngl)
+                [[ $# -lt 2 ]] && die "--start-ngl requires an argument"
+                OPT_START_NGL="$2"; shift 2 ;;
+            --ngl-dir)
+                [[ $# -lt 2 ]] && die "--ngl-dir requires up or down"
+                [[ "$2" != "up" && "$2" != "down" ]] && die "--ngl-dir must be 'up' or 'down'"
+                OPT_DIR_NGL="$2"; shift 2 ;;
+            --start-threads)
+                [[ $# -lt 2 ]] && die "--start-threads requires an argument"
+                OPT_START_THREADS="$2"; shift 2 ;;
+            --threads-dir)
+                [[ $# -lt 2 ]] && die "--threads-dir requires up or down"
+                [[ "$2" != "up" && "$2" != "down" ]] && die "--threads-dir must be 'up' or 'down'"
+                OPT_DIR_THREADS="$2"; shift 2 ;;
+            --start-ctx)
+                [[ $# -lt 2 ]] && die "--start-ctx requires an argument"
+                OPT_START_CTX="$2"; shift 2 ;;
+            --ctx-dir)
+                [[ $# -lt 2 ]] && die "--ctx-dir requires up or down"
+                [[ "$2" != "up" && "$2" != "down" ]] && die "--ctx-dir must be 'up' or 'down'"
+                OPT_DIR_CTX="$2"; shift 2 ;;
+            --start-ctk)
+                [[ $# -lt 2 ]] && die "--start-ctk requires an argument"
+                OPT_START_CTK="$2"; shift 2 ;;
+            --ctk-dir)
+                [[ $# -lt 2 ]] && die "--ctk-dir requires up or down"
+                [[ "$2" != "up" && "$2" != "down" ]] && die "--ctk-dir must be 'up' or 'down'"
+                OPT_DIR_CTK="$2"; shift 2 ;;
+            --start-b)
+                [[ $# -lt 2 ]] && die "--start-b requires an argument"
+                OPT_START_B="$2"; shift 2 ;;
+            --b-dir)
+                [[ $# -lt 2 ]] && die "--b-dir requires up or down"
+                [[ "$2" != "up" && "$2" != "down" ]] && die "--b-dir must be 'up' or 'down'"
+                OPT_DIR_B="$2"; shift 2 ;;
+            --start-ub)
+                [[ $# -lt 2 ]] && die "--start-ub requires an argument"
+                OPT_START_UB="$2"; shift 2 ;;
+            --ub-dir)
+                [[ $# -lt 2 ]] && die "--ub-dir requires up or down"
+                [[ "$2" != "up" && "$2" != "down" ]] && die "--ub-dir must be 'up' or 'down'"
+                OPT_DIR_UB="$2"; shift 2 ;;
+
             --dry-run)
                 OPT_DRY_RUN=true; shift ;;
             --no-confirm)
@@ -587,6 +666,63 @@ run_bench() {
     echo "not-implemented"
 }
 
+# apply_axis_opts LIST_VALUES START_VALUE DIRECTION
+#
+# Given a full ordered list of values (space-separated), a start value, and a
+# direction ("up" or "down"), returns the subset of the list beginning at
+# START_VALUE and proceeding in the given direction.
+#
+# If START_VALUE is empty, the full list is returned in the given direction.
+# If START_VALUE is not found in the list, the full list is returned with a warning.
+#
+# "up"   = ascending order starting from START_VALUE
+# "down" = descending order starting from START_VALUE
+#
+# Output: space-separated values printed to stdout, one per line.
+#
+# Example:
+#   apply_axis_opts "0 4 8 12 16 20" "8" "up"   -> 8 12 16 20
+#   apply_axis_opts "0 4 8 12 16 20" "8" "down" -> 8 4 0
+apply_axis_opts() {
+    local -a full_list=($1)
+    local start="$2"
+    local direction="$3"
+
+    # Reverse list if direction is down
+    local -a ordered=()
+    if [[ "${direction}" == "down" ]]; then
+        local i
+        for (( i=${#full_list[@]}-1; i>=0; i-- )); do
+            ordered+=("${full_list[$i]}")
+        done
+    else
+        ordered=("${full_list[@]}")
+    fi
+
+    # If no start specified, return full ordered list
+    if [[ -z "${start}" ]]; then
+        printf '%s\n' "${ordered[@]}"
+        return 0
+    fi
+
+    # Find start index
+    local found=false
+    local val
+    for val in "${ordered[@]}"; do
+        if [[ "${found}" == true ]]; then
+            echo "${val}"
+        elif [[ "${val}" == "${start}" ]]; then
+            found=true
+            echo "${val}"
+        fi
+    done
+
+    if [[ "${found}" == false ]]; then
+        warn "Start value '${start}' not found in axis list -- using full list"
+        printf '%s\n' "${ordered[@]}"
+    fi
+}
+
 # -----------------------------------------------------------------------------
 # phase0_ngl_probe
 #   Algorithm: binary-search the maximum NGL that fits without OOM.
@@ -616,6 +752,7 @@ phase0_ngl_probe() {
 # -----------------------------------------------------------------------------
 phase1_ngl_sweep() {
     log "[Phase 1] NGL sweep (0.. step ${SWEEP_NGL_STEP})"
+    # Apply: ngl_list=$(apply_axis_opts "${full_ngl_list}" "${OPT_START_NGL}" "${OPT_DIR_NGL}")
     # TODO: implement iterative sweep described above
 }
 
@@ -637,6 +774,7 @@ phase1_ngl_sweep() {
 # -----------------------------------------------------------------------------
 phase2_fa_kv_sweep() {
     log "[Phase 2] Flash-attn × KV-type sweep"
+    # Apply: ctk_list=$(apply_axis_opts "${full_ctk_list}" "${OPT_START_CTK}" "${OPT_DIR_CTK}")
     # TODO: implement combo iteration described above
     #
     # Standard combos array (fa ctk ctv):
@@ -657,6 +795,7 @@ phase2_fa_kv_sweep() {
 # -----------------------------------------------------------------------------
 phase3_thread_sweep() {
     log "[Phase 3] CPU thread sweep"
+    # Apply: thread_list=$(apply_axis_opts "${full_thread_list}" "${OPT_START_THREADS}" "${OPT_DIR_THREADS}")
     # TODO: implement
     # Thread candidates derived from HW_CPU_PHYSICAL and HW_CPU_LOGICAL:
     #   e.g. for 8P/16L: 1 2 4 6 8 12 16
@@ -695,6 +834,8 @@ phase4_nkvo_sweep() {
 # -----------------------------------------------------------------------------
 phase5_batch_sweep() {
     log "[Phase 5] Batch / ubatch sweep"
+    # Apply: b_list=$(apply_axis_opts "${full_b_list}" "${OPT_START_B}" "${OPT_DIR_B}")
+    # Apply: ub_list=$(apply_axis_opts "${full_ub_list}" "${OPT_START_UB}" "${OPT_DIR_UB}")
     # TODO: implement batch pair iteration described above
 }
 
@@ -710,6 +851,7 @@ phase5_batch_sweep() {
 # -----------------------------------------------------------------------------
 phase6_ctx_sweep() {
     log "[Phase 6] Context window sweep"
+    # Apply: ctx_list=$(apply_axis_opts "${full_ctx_list}" "${OPT_START_CTX}" "${OPT_DIR_CTX}")
     # TODO: implement context sweep with OOM/speed stop condition
     # Context sizes: 512 1024 2048 4096 8192 16384 32768 65536
 }

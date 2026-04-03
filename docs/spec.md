@@ -266,6 +266,43 @@ baseline — they are not necessarily the fastest config.
 | `ub` (ubatch size) | `512` | `128, 256, 512` |
 | `n_prompt` / context | `512` | `128, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072` |
 
+
+### Axis Start Points & Sweep Direction
+
+Every axis supports two optional override flags:
+
+- **`--start-<axis> <value>`** — begin the sweep at this value instead of the default list start. Values before the start point in the given direction are skipped entirely.
+- **`--<axis>-dir <up|down>`** — control which direction the sweep runs from the start point.
+
+| Axis | Direction "up" means | Direction "down" means | Default |
+|------|---------------------|----------------------|---------|
+| `ngl` | `0 → max_ngl` | `max_ngl → 0` | `up` |
+| `threads` | `1 → HW_CPU_LOGICAL` | `HW_CPU_LOGICAL → 1` | `up` |
+| `ctx` | `128 → 131072` | `131072 → 128` | `up` |
+| `ctk` | toward more compression: `f16→q8_0→q4_0→turbo4→turbo3→turbo2` | toward less compression | `up` |
+| `b` (batch) | `512 → 2048` | `2048 → 512` | `up` |
+| `ub` (ubatch) | `128 → 512` | `512 → 128` | `up` |
+
+These flags are independent per axis and can be mixed freely:
+
+```sh
+# Start ngl sweep at 40, going down (tests 40, 36, 32, ... 0)
+llamaseye.sh --model model.gguf --start-ngl 40 --ngl-dir down
+
+# Start context sweep at 8k going up (skips 128/512/1k/2k/4k)
+llamaseye.sh --model model.gguf --start-ctx 8192 --ctx-dir up
+
+# Start KV quant sweep at q8_0 going up (tests q8_0, q4_0, turbo4, turbo3, turbo2)
+llamaseye.sh --model model.gguf --start-ctk q8_0 --ctk-dir up
+
+# Start threads at 8 going down (tests 8, 6, 4, 2, 1)
+llamaseye.sh --model model.gguf --start-threads 8 --threads-dir down
+```
+
+**Behaviour when start value is not in the list:** A warning is logged and the full list in the given direction is used — the sweep never aborts due to a missing start point.
+
+**Interaction with Phase 7 (Combination Matrix):** Start points and directions only apply to the single-axis phases (1–6). Phase 7 always uses the complete set of working values discovered in those phases, regardless of which start point was used. This ensures the combination matrix is still exhaustive over the viable values — it is not artificially restricted by the user's chosen starting point.
+
 Thread sweep values are generated dynamically from `HW_CPU_PHYSICAL` and
 `HW_CPU_LOGICAL` at runtime. For example, on an 8C/16T machine the list
 becomes: `1, 2, 4, 6, 8, 12, 16`. On a 6C/12T machine: `1, 2, 4, 6, 12`.
@@ -1047,6 +1084,21 @@ Utility:
   --dry-run                  Detect hardware and print all planned commands
                              without executing any benchmarks.
   --no-confirm               Skip Phase 7 size confirmation prompt.
+  Axis start points & directions:
+  --start-ngl N         Begin ngl sweep at N (skips values before N in sweep direction).
+  --ngl-dir up|down     ngl sweep direction: up=0→max, down=max→0. Default: up.
+  --start-threads N     Begin thread sweep at N.
+  --threads-dir up|down Thread sweep direction. Default: up.
+  --start-ctx N         Begin context sweep at prompt size N.
+  --ctx-dir up|down     Context sweep direction: up=128→131072, down=131072→128. Default: up.
+  --start-ctk TYPE      Begin KV quant sweep at TYPE.
+                        Full ordering (up=more compression):
+                        f16 → q8_0 → q4_0 → turbo4 → turbo3 → turbo2
+  --ctk-dir up|down     KV type sweep direction. Default: up.
+  --start-b N           Begin batch size sweep at N.
+  --b-dir up|down       Batch size direction: up=512→2048, down=2048→512. Default: up.
+  --start-ub N          Begin ubatch size sweep at N.
+  --ub-dir up|down      Ubatch size direction. Default: up.
   -h, --help                 Print usage and exit.
 ```
 
