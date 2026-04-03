@@ -116,6 +116,7 @@ OPT_START_CTX=""              # --start-ctx N: begin context sweep at this promp
 OPT_START_CTK=""              # --start-ctk TYPE: begin KV quant sweep at this type
 OPT_START_B=""                # --start-b N: begin batch sweep at this b value
 OPT_START_UB=""               # --start-ub N: begin ubatch sweep at this ub value
+OPT_START_FA=""               # --start-fa 0|1: begin FA sweep at this value
 
 # --- Sweep axis directions ---
 # "up"   = sweep from start toward the high end of the list
@@ -127,6 +128,7 @@ OPT_DIR_CTX="up"              # --ctx-dir up|down     (up = 128->131072)
 OPT_DIR_CTK="up"              # --ctk-dir up|down     (up = toward more compression)
 OPT_DIR_B="up"                # --b-dir up|down       (up = 512->2048)
 OPT_DIR_UB="up"               # --ub-dir up|down      (up = 128->512)
+OPT_DIR_FA="up"               # --fa-dir up|down      (up = 0->1)
 
 
 # =============================================================================
@@ -218,6 +220,8 @@ Axis start points & directions:
   --b-dir up|down       Sweep direction (default: up = 512->2048).
   --start-ub N          Begin ubatch size sweep at this value.
   --ub-dir up|down      Sweep direction (default: up = 128->512).
+  --start-fa 0|1        Begin FA sweep at this value (0=off, 1=on). Default: 0.
+  --fa-dir up|down      FA sweep direction: up=0->1, down=1->0. Default: up.
 
   --dry-run             Print bench commands without executing them
   --no-confirm          Skip the pre-sweep confirmation prompt
@@ -348,6 +352,15 @@ parse_args() {
                 [[ $# -lt 2 ]] && die "--ub-dir requires up or down"
                 [[ "$2" != "up" && "$2" != "down" ]] && die "--ub-dir must be 'up' or 'down'"
                 OPT_DIR_UB="$2"; shift 2 ;;
+
+            --start-fa)
+                [[ $# -lt 2 ]] && die "--start-fa requires 0 or 1"
+                [[ "$2" != "0" && "$2" != "1" ]] && die "--start-fa must be 0 or 1"
+                OPT_START_FA="$2"; shift 2 ;;
+            --fa-dir)
+                [[ $# -lt 2 ]] && die "--fa-dir requires up or down"
+                [[ "$2" != "up" && "$2" != "down" ]] && die "--fa-dir must be 'up' or 'down'"
+                OPT_DIR_FA="$2"; shift 2 ;;
 
             --dry-run)
                 OPT_DRY_RUN=true; shift ;;
@@ -775,6 +788,9 @@ phase1_ngl_sweep() {
 phase2_fa_kv_sweep() {
     log "[Phase 2] Flash-attn × KV-type sweep"
     # Apply: ctk_list=$(apply_axis_opts "${full_ctk_list}" "${OPT_START_CTK}" "${OPT_DIR_CTK}")
+    # Apply FA direction:
+    # fa_list=$(apply_axis_opts "0 1" "${OPT_START_FA}" "${OPT_DIR_FA}")
+    # Then iterate fa_list x ctk_list, skipping invalid combos (fa=0 + q4_0, fa=0 + turbo*)
     # TODO: implement combo iteration described above
     #
     # Standard combos array (fa ctk ctv):

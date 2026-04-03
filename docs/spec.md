@@ -282,6 +282,7 @@ Every axis supports two optional override flags:
 | `ctk` | toward more compression: `f16→q8_0→q4_0→turbo4→turbo3→turbo2` | toward less compression | `up` |
 | `b` (batch) | `512 → 2048` | `2048 → 512` | `up` |
 | `ub` (ubatch) | `128 → 512` | `512 → 128` | `up` |
+| `fa` | `0 → 1` (off → on) | `1 → 0` (on → off) | `up` |
 
 These flags are independent per axis and can be mixed freely:
 
@@ -1099,6 +1100,8 @@ Utility:
   --b-dir up|down       Batch size direction: up=512→2048, down=2048→512. Default: up.
   --start-ub N          Begin ubatch size sweep at N.
   --ub-dir up|down      Ubatch size direction. Default: up.
+  --start-fa 0|1        Begin FA sweep at 0 (off) or 1 (on). Default: 0.
+  --fa-dir up|down      FA sweep direction: up=0->1, down=1->0. Default: up.
   -h, --help                 Print usage and exit.
 ```
 
