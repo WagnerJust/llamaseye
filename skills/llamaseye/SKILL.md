@@ -159,33 +159,65 @@ table in the Phase 7 section showing max successful context per (ngl, ctk, nkvo)
 
 ---
 
-## Deploying to the PC
+## Prerequisites & Deployment
+
+### llama-bench (required — user must build this themselves)
+
+llamaseye does not build llama-bench. The user must have already built it from
+[llama.cpp](https://github.com/ggml-org/llama.cpp) with whatever backend flags
+suit their hardware. If it is not present, help them build it before running any sweep.
 
 ```sh
-# SCP latest script from local Mac
+# Check whether llama-bench already exists
+ls -lh ~/llama.cpp/build/bin/llama-bench
+
+# If missing — clone and build (choose the right backend flags):
+
+# CUDA (NVIDIA GPU)
+git clone https://github.com/ggml-org/llama.cpp ~/llama.cpp
+cd ~/llama.cpp
+cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target llama-bench -j$(nproc)
+
+# Metal (macOS — Apple Silicon or Intel Mac)
+cmake -B build -DGGML_METAL=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target llama-bench -j$(sysctl -n hw.logicalcpu)
+
+# CPU-only (no GPU)
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target llama-bench -j$(nproc)
+```
+
+The binary path defaults to `~/llama.cpp/build/bin/llama-bench`. Override with
+`--llama-bench <path>` or the `LLAMA_BENCH_BIN` environment variable.
+
+### TurboQuant llama-bench (optional)
+
+Only needed for `turbo2`/`turbo3`/`turbo4` KV types. Build from the fork:
+
+```sh
+# Check whether TurboQuant binary already exists
+ls -lh ~/llama-cpp-turboquant/build/bin/llama-bench
+
+# If missing:
+git clone https://github.com/TheTom/llama-cpp-turboquant \
+  --branch feature/turboquant-kv-cache --depth=1 ~/llama-cpp-turboquant
+cd ~/llama-cpp-turboquant
+cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target llama-bench -j$(nproc)
+
+# Verify TurboQuant compiled in — must print turbo2, turbo3, turbo4:
+./build/bin/llama-bench --help 2>&1 | grep turbo
+# Nothing printed = wrong branch (master is a plain llama.cpp mirror)
+```
+
+### Deploy llamaseye script
+
+```sh
+# SCP the script to the remote host
 scp /path/to/llamaseye/llamaseye.sh user@inference-host:~/llamaseye.sh
 ssh user@inference-host "chmod +x ~/llamaseye.sh"
-
-# Verify standard binary exists
-ssh user@inference-host "ls -lh ~/llama.cpp/build/bin/llama-bench"
-
-# Verify TurboQuant binary (optional)
-ssh user@inference-host "ls -lh ~/llama-cpp-turboquant/build/bin/llama-bench"
 ```
-
-If the TurboQuant binary is missing, build it:
-```sh
-ssh user@inference-host "
-  cd ~/llama-cpp-turboquant &&
-  git checkout feature/turboquant-kv-cache &&
-  cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release &&
-  cmake --build build --config Release -j8 --target llama-bench &&
-  ./build/bin/llama-bench --help 2>&1 | grep turbo
-"
-# Must print turbo2, turbo3, turbo4 — otherwise wrong branch
-```
-
----
 
 ## Phase Reference
 
