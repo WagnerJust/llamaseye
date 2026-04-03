@@ -20,10 +20,10 @@ description: >
 **llamaseye** (`llamaseye.sh`) is an exhaustive llama-bench parameter sweep harness that:
 
 - Detects hardware at runtime (CPU cores, RAM, GPU VRAM, backend, thermal sensors)
-- Sweeps **7 parameter axes independently** across 8 phases (Phase 0-6 solo, Phase 7 cartesian product)
-- Outputs structured JSONL records per run, a markdown summary table (`sweep.md`), a running log
-  (`sweep.log`), and state files (`hardware.json`, `state.json`)
-- Can be **resumed** at any point, run on a single model or an entire directory, and filtered by a model list
+- Sweeps **7 parameter axes independently** across 8 phases (Phases 0–6 solo, Phase 7 cartesian product)
+- Outputs structured JSONL records per run, a markdown summary (`sweep.md`), a log (`sweep.log`),
+  and state files (`hardware.json`, `state.json`)
+- Can be resumed at any point, run on a single model or a whole directory, filtered by a model list
 - Optionally uses a **TurboQuant binary** to test `turbo2/turbo3/turbo4` KV cache types
 
 **Key paths on the Powerhouse PC (`justin@justin-powerhouse` via Tailscale):**
@@ -36,240 +36,153 @@ description: >
 | llama-bench (TurboQuant) | `~/llama-cpp-turboquant/build/bin/llama-bench` |
 | llamaseye script | `~/llamaseye.sh` (SCP from local Mac if needed) |
 
-**Repo location (local Mac):** `/Users/justin/Side/llamaseye/llamaseye.sh`
+**Repo (local Mac):** `/Users/justin/Side/llamaseye/llamaseye.sh`
 
 ---
 
 ## Running a Sweep
 
-### Single model -- full sweep (all phases)
-
 ```sh
-ssh justin@justin-powerhouse \
-  "bash ~/llamaseye.sh ~/Models/Qwen3-14B-Q4_K_M.gguf"
-```
+# Single model -- full sweep
+bash ~/llamaseye.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ~/Models/bench/sweep
 
-### Single model -- full sweep with TurboQuant binary
+# All models in a directory
+bash ~/llamaseye.sh --models-dir ~/Models --output-dir ~/Models/bench/sweep
 
-```sh
-ssh justin@justin-powerhouse \
-  "LLAMA_BENCH_BIN_TURBO=~/llama-cpp-turboquant/build/bin/llama-bench \
-   bash ~/llamaseye.sh ~/Models/Qwen3-14B-Q4_K_M.gguf"
-```
+# Filtered list of models
+bash ~/llamaseye.sh --models-dir ~/Models --model-list ~/bench_list.txt --output-dir ~/Models/bench/sweep
 
-### Whole models directory
+# With TurboQuant binary (enables turbo2/turbo3/turbo4 KV types)
+bash ~/llamaseye.sh --model ~/Models/model.gguf \
+  --llama-bench ~/llama.cpp/build/bin/llama-bench \
+  --turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench
 
-```sh
-ssh justin@justin-powerhouse \
-  "bash ~/llamaseye.sh ~/Models/"
-```
+# Resume an interrupted sweep
+bash ~/llamaseye.sh --model ~/Models/model.gguf --resume
 
-### Whole directory with a model list filter
+# Run only specific phases
+bash ~/llamaseye.sh --model ~/Models/model.gguf --only-phases 6,7
 
-```sh
-# Create the list on the PC first:
-ssh justin@justin-powerhouse \
-  "printf 'Qwen3-14B-Q4_K_M.gguf\nLlama-3.1-8B-Q6_K.gguf\n' > ~/bench_list.txt"
-
-ssh justin@justin-powerhouse \
-  "bash ~/llamaseye.sh ~/Models/ --model-list ~/bench_list.txt"
-```
-
-### Resume an interrupted sweep
-
-```sh
-ssh justin@justin-powerhouse \
-  "bash ~/llamaseye.sh ~/Models/Qwen3-14B-Q4_K_M.gguf --resume"
-```
-
-### Run only specific phases (e.g. phases 5 and 6)
-
-```sh
-ssh justin@justin-powerhouse \
-  "bash ~/llamaseye.sh ~/Models/Qwen3-14B-Q4_K_M.gguf --phases 5,6"
-```
-
-### Start mid-axis and sweep downward
-
-```sh
-# Start NGL sweep at layer 40, going down
-ssh justin@justin-powerhouse \
-  "bash ~/llamaseye.sh ~/Models/Qwen3-14B-Q4_K_M.gguf \
-   --start-ngl 40 --ngl-dir down"
-```
-
-### Custom output directory
-
-```sh
-ssh justin@justin-powerhouse \
-  "bash ~/llamaseye.sh ~/Models/Qwen3-14B-Q4_K_M.gguf \
-   --output ~/Models/bench/custom_run/"
+# Unattended overnight
+nohup bash ~/llamaseye.sh --models-dir ~/Models > /dev/null 2>&1 &
+tail -f ~/Models/bench/sweep/sweep.log
 ```
 
 ---
 
 ## Choosing Flags for the Situation
 
-| Situation | Flags to use |
-|-----------|--------------|
-| First time running a model | No extra flags -- full sweep |
+| Situation | Flags |
+|-----------|-------|
+| First run of a model | No extra flags — full sweep |
 | Interrupted run | `--resume` |
-| Re-run just one phase | `--phases <N>` |
-| Re-run multiple phases | `--phases 5,6,7` |
-| Skip Phase 7 (no combo matrix) | `--phases 0,1,2,3,4,5,6` |
-| Sweep all models in a dir | Pass the directory path instead of a file |
-| Filter which models to sweep | `--model-list ~/list.txt` |
-| TurboQuant KV types (turbo2/3/4) | Set `LLAMA_BENCH_BIN_TURBO` env var |
-| Start NGL axis at a known-good value | `--start-ngl <N>` |
-| NGL sweep going down from max | `--ngl-dir down` |
-| Start context sweep at specific size | `--start-ctx <N>` |
-| Sweep context downward | `--ctx-dir down` |
-| Custom thread starting point | `--start-threads <N>` |
-| Custom batch starting point | `--start-batch <N>` |
+| Re-run one or more phases | `--only-phases 6,7` |
+| Skip Phase 7 | `--skip-phases 7` |
+| All models in a dir | `--models-dir <dir>` |
+| Curated model subset | `--model-list ~/list.txt` |
+| TurboQuant KV types | `--turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench` |
+| Start NGL sweep mid-range | `--start-ngl 40` |
+| NGL sweep downward from a known point | `--start-ngl 60 --ngl-dir down` |
+| Skip low context sizes | `--start-ctx 65536` |
+| Skip low-quality KV types in Phase 7 | `--min-ctk q8_0` |
+| Phase 7 only above 64k context | `--min-ctx 65536` |
+| Only test FA=1 | `--start-fa 1` |
 
-**When to use the TurboQuant binary:**
-- Any time you want to test `turbo2`, `turbo3`, or `turbo4` KV cache quantization types
-- Only if `~/llama-cpp-turboquant/build/bin/llama-bench` exists on the PC
-- Set via env var, not a flag: `LLAMA_BENCH_BIN_TURBO=~/llama-cpp-turboquant/build/bin/llama-bench`
+**Phase 7 and sweep scope:**
+Phase 7 (combination matrix) uses **exactly the values that phases 1–6 actually tested** — not
+the full possible list. So `--start-*` and `--*-dir` flags naturally narrow Phase 7 too.
+Use `--min-*` flags when you want phases 1–6 to run full discovery for per-axis data, but
+Phase 7 to only combine values meeting a minimum threshold.
 
 **When to skip Phase 7:**
-- Phase 7 is a full cartesian product -- it can be very long for models with many viable values
-- Skip it during initial exploration; run it last once you know the interesting region
-- Use `--phases 0,1,2,3,4,5,6` to stop before the combo matrix
+Phase 7 is a full cartesian product and can take a very long time. Skip it during initial
+exploration; run it once you know the interesting region. Use `--skip-phases 7` or run
+`--only-phases 0,1,2,3,4,5,6` first.
 
 ---
 
 ## Monitoring Progress
 
-### Tail the sweep log in real time
-
 ```sh
-ssh justin@justin-powerhouse \
-  "tail -f ~/Models/bench/sweep/sweep.log"
+# Tail the log in real time (run via SSH)
+tail -f ~/Models/bench/sweep/sweep.log
+
+# Check state (which phases are complete, working sets so far)
+cat ~/Models/bench/sweep/<model-stem>/state.json
 ```
 
-### Watch the last 50 lines (less noise)
-
-```sh
-ssh justin@justin-powerhouse \
-  "tail -n 50 -f ~/Models/bench/sweep/sweep.log"
+**Typical log lines:**
 ```
-
-### Typical log line patterns
-
-```
-[llamaseye] Phase 1: NGL axis sweep
-[llamaseye] -> ngl=35 | tg=47.3 t/s | pp=312.1 t/s
-[llamaseye] CHECK ngl=35 viable (tg >= threshold)
-[llamaseye] Phase 2: FA + KV quant axis sweep
-[llamaseye] -> fa=1 kv=q8_0 | tg=48.1 t/s
-[llamaseye] Phase 7: Combination matrix (N combos)
-[llamaseye] CHECK Sweep complete -- results in sweep.md
+[2025-01-01T12:00:00Z] [PHASE 1] ngl=40 fa=0 ctk=f16 → ok | PP=987.6 t/s | TG=42.1 t/s
+[2025-01-01T12:00:35Z] [PHASE 1] ngl=44 fa=0 ctk=f16 → oom | skipped
+[2025-01-01T12:00:35Z] [THERMAL] CPU=89°C GPU=79°C — waiting...
+[2025-01-01T12:01:20Z] [PHASE 2] fa=1 ctk=q8_0 → ok | PP=1012.3 t/s | TG=47.8 t/s
+[2025-01-01T12:02:10Z] [PHASE 7] Matrix estimate: 2,400 combos (~20 hrs)
 ```
 
 **What to watch for:**
-- Lines marked `viable` -- these values will feed Phase 7
-- `OOM` or `FAILED` lines -- the config was skipped safely, no intervention needed
-- Thermal warnings -- `wait_cool()` pauses automatically; no action needed
-- Phase transition headers -- each new phase logs a clear header line
-
-### Check current state
-
-```sh
-ssh justin@justin-powerhouse "cat ~/Models/bench/sweep/state.json"
-```
+- `oom | skipped` lines — handled safely, sweep continues
+- `[THERMAL]` lines — `wait_cool()` is pausing automatically, no action needed
+- Phase 7 estimate — confirm it's reasonable before walking away
 
 ---
 
 ## Interpreting Results
 
-### View the markdown summary
-
 ```sh
-ssh justin@justin-powerhouse "cat ~/Models/bench/sweep/sweep.md"
+# View the markdown summary
+cat ~/Models/bench/sweep/<model-stem>/sweep.md
+
+# Fastest TG config
+jq -s 'sort_by(-.results[].avg_ts) | .[0]' sweep.jsonl
+
+# Top 5 configs by TG speed
+jq -s '[.[] | select(.status=="ok")] | sort_by(-.results[1].avg_ts) | .[:5]' sweep.jsonl
+
+# Largest successful context size
+jq -s '[.[] | select(.status=="ok" and .params.n_gen==0)] | sort_by(-.params.n_prompt) | .[0]' sweep.jsonl
 ```
 
-`sweep.md` contains per-phase tables with columns such as:
-
-| ngl | fa | kv_type | threads | nkvo | batch | ubatch | ctx | tg (t/s) | pp (t/s) | viable |
-|-----|----|---------|---------|------|-------|--------|-----|----------|----------|--------|
+`sweep.md` contains one table per phase, sorted by TG t/s descending, plus a **Context Frontier**
+table in the Phase 7 section showing max successful context per (ngl, ctk, nkvo) triple.
 
 **What to look for:**
+1. **Best TG t/s** — highest token generation speed; check Phase 7 combo rows first
+2. **Context frontier** — the largest `n_prompt` value that completed without OOM
+3. **`viable` flag** — `true` when TG avg_ts ≥ 2.0 t/s (usable for interactive inference)
+4. **NGL sweet spot** — Phase 1 table shows where adding more GPU layers stops helping
+5. **KV quant tradeoff** — Phase 2 shows speed vs. memory across f16, q8_0, q4_0, turbo types
 
-1. **Best TG t/s** -- highest token generation speed; look in Phase 7 combo rows first
-2. **Context frontier** -- the largest `ctx` value that completed without OOM
-3. **Viable flag** -- only rows with `viable=1` fed into Phase 7
-4. **NGL sweet spot** -- Phase 1 table shows where adding more GPU layers stops helping
-5. **KV quant tradeoff** -- Phase 2 shows speed vs. quality tradeoff across `f16`, `q8_0`, `q4_0`,
-   and `turbo2`-`turbo4` if the TurboQuant binary was used
-
-**TG t/s vs PP t/s:**
-- **TG (token generation)** -- autoregressive decode speed; this is the metric that matters for
-  interactive inference and chat
-- **PP (prompt processing / prefill)** -- throughput for ingesting the prompt; matters for long
-  context and RAG pipelines
-
-### Query the JSONL for the fastest config
-
-```sh
-ssh justin@justin-powerhouse \
-  "jq -s 'sort_by(-.tg_ts) | .[0]' ~/Models/bench/sweep/sweep.jsonl"
-```
-
-### Find the largest viable context size
-
-```sh
-ssh justin@justin-powerhouse \
-  "jq -s '[.[] | select(.viable==1)] | sort_by(-.ctx) | .[0]' \
-   ~/Models/bench/sweep/sweep.jsonl"
-```
-
-### Top 5 configs by TG speed
-
-```sh
-ssh justin@justin-powerhouse \
-  "jq -s 'sort_by(-.tg_ts) | .[:5] | .[] | {ngl,fa,kv_type,threads,ctx,tg_ts}' \
-   ~/Models/bench/sweep/sweep.jsonl"
-```
+**TG vs PP:**
+- **TG (token generation)** — decode speed; the metric for interactive/chat use
+- **PP (prompt processing)** — prefill throughput; matters for long context and RAG
 
 ---
 
 ## Deploying to the PC
 
-If `llamaseye.sh` is not on the PC yet, or needs to be updated from the local repo:
-
 ```sh
-# From local Mac
-scp /Users/justin/Side/llamaseye/llamaseye.sh \
-    justin@justin-powerhouse:~/llamaseye.sh
-
-# Make executable
+# SCP latest script from local Mac
+scp /Users/justin/Side/llamaseye/llamaseye.sh justin@justin-powerhouse:~/llamaseye.sh
 ssh justin@justin-powerhouse "chmod +x ~/llamaseye.sh"
+
+# Verify standard binary exists
+ssh justin@justin-powerhouse "ls -lh ~/llama.cpp/build/bin/llama-bench"
+
+# Verify TurboQuant binary (optional)
+ssh justin@justin-powerhouse "ls -lh ~/llama-cpp-turboquant/build/bin/llama-bench"
 ```
 
-### Verify the standard llama-bench binary exists
-
-```sh
-ssh justin@justin-powerhouse \
-  "ls -lh ~/llama.cpp/build/bin/llama-bench"
-```
-
-### Verify the TurboQuant binary (optional)
-
-```sh
-ssh justin@justin-powerhouse \
-  "ls -lh ~/llama-cpp-turboquant/build/bin/llama-bench"
-```
-
-If the TurboQuant binary is missing and you need turbo KV types, build it first:
-
+If the TurboQuant binary is missing, build it:
 ```sh
 ssh justin@justin-powerhouse "
   cd ~/llama-cpp-turboquant &&
   git checkout feature/turboquant-kv-cache &&
-  cmake -B build -DGGML_CUDA=ON &&
-  cmake --build build --config Release -j8 --target llama-bench
+  cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release &&
+  cmake --build build --config Release -j8 --target llama-bench &&
+  ./build/bin/llama-bench --help 2>&1 | grep turbo
 "
+# Must print turbo2, turbo3, turbo4 — otherwise wrong branch
 ```
 
 ---
@@ -278,28 +191,32 @@ ssh justin@justin-powerhouse "
 
 | Phase | Name | What it sweeps | When to skip |
 |-------|------|----------------|--------------|
-| 0 | NGL probe | Finds `max_ngl` -- how many layers fit fully in VRAM | Never; required by Phase 1 |
-| 1 | NGL axis | GPU layer count from 0 up to `max_ngl` | Only if VRAM/offload situation is already known |
-| 2 | FA + KV quant | Flash attention on/off x KV types (`f16`, `q8_0`, `q4_0`, `turbo2`-`turbo4`) | If KV quant choice is already settled |
-| 3 | Thread count | CPU thread count from 1 up to n_cores | If no CPU offload layers are used |
-| 4 | KV offload (nkvo) | Whether KV cache is offloaded to GPU | If nkvo behavior is already known |
-| 5 | Batch/ubatch | Batch size and micro-batch size combinations | If latency matters more than throughput |
-| 6 | Context size | Context length up to 131072 | If context ceiling is already known |
-| 7 | Combo matrix | Full cartesian product of all viable values from phases 1-6 | Early exploratory runs; always run eventually |
+| 0 | NGL probe | Finds `max_ngl` — how many layers fit in VRAM | Never; required |
+| 1 | NGL axis | GPU layer count 0 → `max_ngl` | Only if offload situation already known |
+| 2 | FA + KV quant | FA on/off × KV types (f16, q8_0, q4_0, turbo2–turbo4) | If KV choice already settled |
+| 3 | Thread count | CPU threads 1 → HW_CPU_LOGICAL | If no CPU offload layers |
+| 4 | KV offload (nkvo) | KV cache in VRAM vs RAM | If nkvo behaviour already known |
+| 5 | Batch/ubatch | Batch and micro-batch size combos | If throughput tuning not needed |
+| 6 | Context size | Prompt size 128 → 131072 (stops at OOM) | If context ceiling already known |
+| 7 | Combo matrix | Cartesian product of all values tested in phases 1–6 | Early exploration; run eventually |
 
 ---
 
-## Axis Start/Direction Flags
+## Axis Start/Direction & Minimum Flags
 
-| Axis | Start flag | Direction flag | Direction values |
-|------|------------|----------------|-----------------|
-| NGL | `--start-ngl <N>` | `--ngl-dir <dir>` | `up` / `down` |
-| Flash Attention | -- | -- | Always both tested |
-| KV quant | `--start-kv <type>` | `--kv-dir <dir>` | `up` / `down` |
-| Threads | `--start-threads <N>` | `--threads-dir <dir>` | `up` / `down` |
-| KV offload | -- | -- | Both tested (binary axis) |
-| Batch | `--start-batch <N>` | `--batch-dir <dir>` | `up` / `down` |
-| Context | `--start-ctx <N>` | `--ctx-dir <dir>` | `up` / `down` |
+Phase 7 inherits exactly what phases 1–6 tested. `--start-*` / `--*-dir` narrow those phases
+and Phase 7 follows automatically. `--min-*` filters Phase 7 only (phases 1–6 still run full discovery).
 
-**Tip:** Use `--<axis>-dir down` when you want to confirm a known-good large value works and stop
-early once quality degrades. Use `up` (default) when starting from scratch to find the ceiling.
+| Axis | Start flag | Direction flag | Min (Phase 7 only) |
+|------|------------|----------------|-------------------|
+| NGL | `--start-ngl N` | `--ngl-dir up\|down` | `--min-ngl N` |
+| Flash Attention | `--start-fa 0\|1` | `--fa-dir up\|down` | — |
+| KV quant (ctk) | `--start-ctk TYPE` | `--ctk-dir up\|down` | `--min-ctk TYPE` |
+| Threads | `--start-threads N` | `--threads-dir up\|down` | `--min-threads N` |
+| Batch | `--start-b N` | `--b-dir up\|down` | `--min-b N` |
+| Ubatch | `--start-ub N` | `--ub-dir up\|down` | `--min-ub N` |
+| Context | `--start-ctx N` | `--ctx-dir up\|down` | `--min-ctx N` |
+
+**KV quant direction "up"** = toward more compression: `f16 → q8_0 → q4_0 → turbo4 → turbo3 → turbo2`
+**`--min-ctk` quality order** (low→high quality): `turbo2 turbo3 turbo4 q4_0 q8_0 f16`
+So `--min-ctk q8_0` keeps only `q8_0` and `f16` in Phase 7.
