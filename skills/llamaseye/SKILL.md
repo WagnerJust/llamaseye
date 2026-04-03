@@ -2,7 +2,7 @@
 name: llamaseye
 description: >
   Use this skill whenever the user mentions llamaseye, running llama-bench sweeps,
-  benchmarking models on the Powerhouse PC, finding the fastest or best config for
+  benchmarking models on the remote inference host, finding the fastest or best config for
   a model, testing GPU layer offload (ngl), context ceiling/frontier testing, KV
   cache benchmarking, flash attention sweeps, TurboQuant KV types, thread count
   tuning, batch/ubatch sizing, or any exhaustive parameter sweep of llama.cpp
@@ -10,7 +10,7 @@ description: >
   PC", "what's the best context size for X", "resume a sweep", "check model
   performance", or "run llama-bench with different settings". Be eager to apply
   this skill -- if there is any chance the user wants to benchmark or sweep a
-  llama.cpp model on the Powerhouse, use it.
+  llama.cpp model on the remote host, use it.
 ---
 
 # llamaseye Skill
@@ -26,7 +26,7 @@ description: >
 - Can be resumed at any point, run on a single model or a whole directory, filtered by a model list
 - Optionally uses a **TurboQuant binary** to test `turbo2/turbo3/turbo4` KV cache types
 
-**Key paths on the Powerhouse PC (`justin@justin-powerhouse` via Tailscale):**
+**Key paths on the remote inference host (SSH):**
 
 | Resource | Path |
 |----------|------|
@@ -36,7 +36,7 @@ description: >
 | llama-bench (TurboQuant) | `~/llama-cpp-turboquant/build/bin/llama-bench` |
 | llamaseye script | `~/llamaseye.sh` (SCP from local Mac if needed) |
 
-**Repo (local Mac):** `/Users/justin/Side/llamaseye/llamaseye.sh`
+**Local repo:** `/path/to/llamaseye/llamaseye.sh`
 
 ---
 
@@ -163,19 +163,19 @@ table in the Phase 7 section showing max successful context per (ngl, ctk, nkvo)
 
 ```sh
 # SCP latest script from local Mac
-scp /Users/justin/Side/llamaseye/llamaseye.sh justin@justin-powerhouse:~/llamaseye.sh
-ssh justin@justin-powerhouse "chmod +x ~/llamaseye.sh"
+scp /path/to/llamaseye/llamaseye.sh user@inference-host:~/llamaseye.sh
+ssh user@inference-host "chmod +x ~/llamaseye.sh"
 
 # Verify standard binary exists
-ssh justin@justin-powerhouse "ls -lh ~/llama.cpp/build/bin/llama-bench"
+ssh user@inference-host "ls -lh ~/llama.cpp/build/bin/llama-bench"
 
 # Verify TurboQuant binary (optional)
-ssh justin@justin-powerhouse "ls -lh ~/llama-cpp-turboquant/build/bin/llama-bench"
+ssh user@inference-host "ls -lh ~/llama-cpp-turboquant/build/bin/llama-bench"
 ```
 
 If the TurboQuant binary is missing, build it:
 ```sh
-ssh justin@justin-powerhouse "
+ssh user@inference-host "
   cd ~/llama-cpp-turboquant &&
   git checkout feature/turboquant-kv-cache &&
   cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release &&

@@ -3,26 +3,26 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Run a full llamaseye sweep on Qwen3-14B-Q4_K_M.gguf on the PC and monitor the progress",
-      "expected_output": "The agent should: (1) check whether llamaseye.sh needs to be SCP'd to the PC and do so if required; (2) launch the sweep with `ssh justin@justin-powerhouse 'bash ~/llamaseye.sh ~/Models/Qwen3-14B-Q4_K_M.gguf'`, ideally inside a tmux session or with nohup so it survives disconnect; (3) tail the log with `ssh justin@justin-powerhouse 'tail -f ~/Models/bench/sweep/sweep.log'`; (4) explain what each phase does as it progresses (Phase 0 = NGL probe, Phase 1 = NGL axis, etc.); (5) note that final results will be in ~/Models/bench/sweep/sweep.md and sweep.jsonl.",
+      "prompt": "Run a full llamaseye sweep on Qwen3-14B-Q4_K_M.gguf on the inference host and monitor the progress",
+      "expected_output": "The agent should: (1) check whether llamaseye.sh needs to be SCP'd to the inference host and do so if required; (2) launch the sweep with `bash ~/llamaseye.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ~/Models/bench/sweep` (run on the inference host via SSH), ideally inside a tmux session or with nohup so it survives disconnect; (3) tail the log with `tail -f ~/Models/bench/sweep/sweep.log` (run on the inference host via SSH); (4) explain what each phase does as it progresses (Phase 0 = NGL probe, Phase 1 = NGL axis, etc.); (5) note that final results will be in ~/Models/bench/sweep/sweep.md and sweep.jsonl.",
       "files": []
     },
     {
       "id": 2,
       "prompt": "I already ran phases 1-4 for Llama-3.1-8B. I want to re-run just the context ceiling sweep and the combination matrix.",
-      "expected_output": "The agent should construct the command with `--phases 6,7` to run only Phase 6 (context size sweep up to 131072) and Phase 7 (full cartesian product combo matrix). It should explain that Phase 7 will pick up the viable values already recorded from the earlier phases 1-4 via state.json. The command: `ssh justin@justin-powerhouse 'bash ~/llamaseye.sh ~/Models/Llama-3.1-8B.gguf --phases 6,7'`. The agent should also suggest adding `--resume` if the context sweep itself was partially started, and warn that Phase 7 runtime scales with the number of viable combos found.",
+      "expected_output": "The agent should construct the command with `--only-phases 6,7` to run only Phase 6 (context size sweep up to 131072) and Phase 7 (full cartesian product combo matrix). It should explain that Phase 7 will pick up the viable values already recorded from the earlier phases 1-4 via state.json. The command: `bash ~/llamaseye.sh --model ~/Models/Llama-3.1-8B.gguf --only-phases 6,7` (run on the inference host via SSH). The agent should also suggest adding `--resume` if the context sweep itself was partially started, and warn that Phase 7 runtime scales with the number of viable combos found.",
       "files": []
     },
     {
       "id": 3,
       "prompt": "Sweep all models in ~/Models but start the ngl sweep from 40 going down, and use the turbo binary for extended context testing",
-      "expected_output": "The agent should: (1) target the whole ~/Models/ directory as the path argument; (2) add `--start-ngl 40 --ngl-dir down` so the NGL axis starts at layer 40 and decrements; (3) set the LLAMA_BENCH_BIN_TURBO env var to `~/llama-cpp-turboquant/build/bin/llama-bench` so that turbo2/turbo3/turbo4 KV types are included in Phase 2; (4) first verify the TurboQuant binary exists on the PC or offer to build it. Final command: `ssh justin@justin-powerhouse 'LLAMA_BENCH_BIN_TURBO=~/llama-cpp-turboquant/build/bin/llama-bench bash ~/llamaseye.sh ~/Models/ --start-ngl 40 --ngl-dir down'`.",
+      "expected_output": "The agent should: (1) target the whole ~/Models/ directory as the path argument; (2) add `--start-ngl 40 --ngl-dir down` so the NGL axis starts at layer 40 and decrements; (3) add `--turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench` so that turbo2/turbo3/turbo4 KV types are included in Phase 2; (4) first verify the TurboQuant binary exists on the inference host or offer to build it. Final command: `bash ~/llamaseye.sh ~/Models/ --start-ngl 40 --ngl-dir down --turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench` (run on the inference host via SSH).",
       "files": []
     },
     {
       "id": 4,
       "prompt": "What does the sweep.md output look like for a model and how do I find which config was fastest?",
-      "expected_output": "The agent should explain that sweep.md is a markdown file with one table per phase, each row representing a single llama-bench run. Columns include the axis parameters tested (ngl, fa, kv_type, threads, nkvo, batch, ubatch, ctx) plus measured tg t/s, pp t/s, and a viable flag. To find the fastest config the agent should provide: `ssh justin@justin-powerhouse "jq -s 'sort_by(-.tg_ts) | .[0]' ~/Models/bench/sweep/sweep.jsonl"` which extracts the single record with the highest TG t/s. It should also explain the difference between TG t/s (autoregressive token generation -- the key metric for chat/inference) and PP t/s (prompt prefill -- relevant for long-context and RAG), and show how to view the raw table with `ssh justin@justin-powerhouse 'cat ~/Models/bench/sweep/sweep.md'`.",
+      "expected_output": "The agent should explain that sweep.md is a markdown file with one table per phase, each row representing a single llama-bench run. Columns include the axis parameters tested (ngl, fa, kv_type, threads, nkvo, batch, ubatch, ctx) plus measured tg t/s, pp t/s, and a viable flag. To find the fastest config the agent should provide: `jq -s 'sort_by(-.results[1].avg_ts) | .[0]' ~/Models/bench/sweep/sweep.jsonl` (run on the inference host via SSH) which extracts the single record with the highest TG t/s. It should also explain the difference between TG t/s (autoregressive token generation -- the key metric for chat/inference) and PP t/s (prompt prefill -- relevant for long-context and RAG), and show how to view the raw table with `cat ~/Models/bench/sweep/sweep.md` (run on the inference host via SSH).",
       "files": []
     }
   ]
