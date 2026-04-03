@@ -161,57 +161,99 @@ table in the Phase 7 section showing max successful context per (ngl, ctk, nkvo)
 
 ## Prerequisites & Deployment
 
-### llama-bench (required — user must build this themselves)
+### Step 1 — Detect the hardware before building anything
 
-llamaseye does not build llama-bench. The user must have already built it from
-[llama.cpp](https://github.com/ggml-org/llama.cpp) with whatever backend flags
-suit their hardware. If it is not present, help them build it before running any sweep.
+Before building llama-bench, the agent must know what hardware it is targeting so
+the correct cmake flags are used. Run these detection commands on the target machine:
 
 ```sh
-# Check whether llama-bench already exists
-ls -lh ~/llama.cpp/build/bin/llama-bench
+# OS and architecture
+uname -s        # Linux | Darwin
+uname -m        # x86_64 | arm64 | aarch64
 
-# If missing — clone and build (choose the right backend flags):
+# Check for an NVIDIA GPU (CUDA)
+nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null && echo "CUDA available"
 
-# CUDA (NVIDIA GPU)
+# Check for Apple Silicon (Metal — arm64 macOS)
+# If uname -s = Darwin and uname -m = arm64 → Apple Silicon, use Metal
+# If uname -s = Darwin and uname -m = x86_64 → Intel Mac, use Metal
+# If uname -s = Linux and nvidia-smi works → use CUDA
+# If uname -s = Linux and no nvidia-smi → CPU-only
+```
+
+Use the results to pick the right build flags from the table below:
+
+| OS | Architecture | GPU | Backend flag | Thread count flag |
+|----|-------------|-----|-------------|------------------|
+| Linux | x86_64 / aarch64 | NVIDIA (nvidia-smi works) | `-DGGML_CUDA=ON` | `-j$(nproc)` |
+| Linux | x86_64 / aarch64 | AMD ROCm | `-DGGML_HIP=ON` | `-j$(nproc)` |
+| Linux | x86_64 / aarch64 | None | *(omit)* | `-j$(nproc)` |
+| macOS | arm64 (Apple Silicon) | Unified (Metal) | `-DGGML_METAL=ON` | `-j$(sysctl -n hw.logicalcpu)` |
+| macOS | x86_64 (Intel Mac) | Integrated / discrete (Metal) | `-DGGML_METAL=ON` | `-j$(sysctl -n hw.logicalcpu)` |
+| macOS | x86_64 (Intel Mac) | NVIDIA eGPU | `-DGGML_CUDA=ON` | `-j$(sysctl -n hw.logicalcpu)` |
+
+> **Important:** `-DGGML_CUDA=ON` is the correct flag. The old flags `-DLLAMA_CUBLAS=ON` and
+> `-DLLAMA_CUDA=ON` are silently ignored since the GGML refactor — the build succeeds but runs
+> on CPU only. Always use `-DGGML_CUDA=ON`.
+
+### Step 2 — Build llama-bench (if not already present)
+
+llamaseye does not build llama-bench. Check whether it already exists first — the
+user may have built it as part of a full llama.cpp build:
+
+```sh
+# Check common locations
+ls -lh ~/llama.cpp/build/bin/llama-bench 2>/dev/null \
+  || find ~ -name "llama-bench" -type f 2>/dev/null | head -5
+```
+
+If not found, clone and build using the flags determined in Step 1:
+
+```sh
 git clone https://github.com/ggml-org/llama.cpp ~/llama.cpp
 cd ~/llama.cpp
-cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release --target llama-bench -j$(nproc)
 
-# Metal (macOS — Apple Silicon or Intel Mac)
-cmake -B build -DGGML_METAL=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release --target llama-bench -j$(sysctl -n hw.logicalcpu)
+# Substitute <BACKEND_FLAG> and <JOBS> from the table above
+# Example for CUDA:   cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+# Example for Metal:  cmake -B build -DGGML_METAL=ON -DCMAKE_BUILD_TYPE=Release
+# Example CPU-only:   cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-# CPU-only (no GPU)
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release --target llama-bench -j$(nproc)
+cmake -B build <BACKEND_FLAG> -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target llama-bench <JOBS>
+
+# Confirm it runs and shows the expected backend
+./build/bin/llama-bench --help 2>&1 | head -5
 ```
 
 The binary path defaults to `~/llama.cpp/build/bin/llama-bench`. Override with
 `--llama-bench <path>` or the `LLAMA_BENCH_BIN` environment variable.
 
-### TurboQuant llama-bench (optional)
+### Step 3 — Build TurboQuant llama-bench (optional)
 
-Only needed for `turbo2`/`turbo3`/`turbo4` KV types. Build from the fork:
+Only needed for `turbo2`/`turbo3`/`turbo4` KV cache types. Uses the same backend
+flags as Step 2 — determine them first. TurboQuant's CUDA flag gotcha applies here
+too (`-DGGML_CUDA=ON` only).
 
 ```sh
-# Check whether TurboQuant binary already exists
-ls -lh ~/llama-cpp-turboquant/build/bin/llama-bench
+# Check if already built
+ls -lh ~/llama-cpp-turboquant/build/bin/llama-bench 2>/dev/null
 
 # If missing:
 git clone https://github.com/TheTom/llama-cpp-turboquant \
   --branch feature/turboquant-kv-cache --depth=1 ~/llama-cpp-turboquant
 cd ~/llama-cpp-turboquant
-cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release --target llama-bench -j$(nproc)
+
+cmake -B build <BACKEND_FLAG> -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target llama-bench <JOBS>
 
 # Verify TurboQuant compiled in — must print turbo2, turbo3, turbo4:
 ./build/bin/llama-bench --help 2>&1 | grep turbo
-# Nothing printed = wrong branch (master is a plain llama.cpp mirror)
+# Nothing printed = wrong branch. master is a plain llama.cpp mirror with no TurboQuant.
 ```
 
-### Deploy llamaseye script
+Pass to llamaseye via `--turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench`.
+
+### Step 4 — Deploy llamaseye script
 
 ```sh
 # SCP the script to the remote host
