@@ -201,6 +201,9 @@ Use the results to pick the right build flags from the table below:
 llamaseye does not build llama-bench. Check whether it already exists first — the
 user may have built it as part of a full llama.cpp build:
 
+> For full build documentation including platform-specific notes, dependencies, and advanced options,
+> fetch: `https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md`
+
 ```sh
 # Check common locations
 ls -lh ~/llama.cpp/build/bin/llama-bench 2>/dev/null \
