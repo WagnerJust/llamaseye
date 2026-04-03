@@ -437,22 +437,147 @@ parse_args() {
 #     - HW_GPU_TEMP_CMD: a shell snippet using nvidia-smi --query-gpu=temperature.gpu
 # -----------------------------------------------------------------------------
 detect_hardware() {
-    # TODO: implement
-    #   Linux:
-    #     HW_CPU_MODEL  <- grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2
-    #     HW_CPU_PHYSICAL <- grep "^cpu cores" /proc/cpuinfo | head -1 | awk "{print $4}"
-    #     HW_CPU_LOGICAL  <- nproc
-    #     HW_RAM_GIB    <- awk "/MemTotal/{printf "%d", $2/1024/1024}" /proc/meminfo
-    #     HW_RAM_FREE_GIB <- awk "/MemAvailable/{printf "%d", $2/1024/1024}" /proc/meminfo
-    #   GPU (nvidia-smi):
-    #     HW_GPU_COUNT  <- nvidia-smi --query-gpu=count --format=csv,noheader | head -1
-    #     HW_GPU_MODEL  <- nvidia-smi --query-gpu=name --format=csv,noheader | head -1
-    #     HW_GPU_VRAM_GIB    <- nvidia-smi --query-gpu=memory.total ...
-    #     HW_GPU_VRAM_FREE_GIB <- nvidia-smi --query-gpu=memory.free ...
-    #     HW_BACKEND=cuda
-    #   Thermal commands:
-    #     HW_CPU_TEMP_CMD="sensors -u 2>/dev/null | awk ..." or /sys/class/thermal fallback
-    #     HW_GPU_TEMP_CMD="nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader"
+    local os_type
+    os_type="$(uname -s)"   # Linux | Darwin
+    local arch
+    arch="$(uname -m)"      # x86_64 | arm64 | aarch64
+
+    log "[HW] OS: ${os_type}  Arch: ${arch}"
+
+    # ------------------------------------------------------------------
+    # CPU — model string, physical cores, logical threads
+    # ------------------------------------------------------------------
+    # TODO:
+    # if [[ "${os_type}" == "Darwin" ]]; then
+    #     HW_CPU_MODEL="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'unknown')"
+    #     HW_CPU_PHYSICAL="$(sysctl -n hw.physicalcpu 2>/dev/null || echo 1)"
+    #     HW_CPU_LOGICAL="$(sysctl -n hw.logicalcpu 2>/dev/null || echo 1)"
+    # else  # Linux
+    #     HW_CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+    #     HW_CPU_PHYSICAL="$(lscpu | awk -F: '/^Core\(s\) per socket/{cores=$2} /^Socket\(s\)/{sockets=$2} END{print cores*sockets}' | xargs)"
+    #     HW_CPU_LOGICAL="$(nproc --all 2>/dev/null || grep -c '^processor' /proc/cpuinfo)"
+    # fi
+
+    # ------------------------------------------------------------------
+    # RAM — total and free GiB
+    # ------------------------------------------------------------------
+    # TODO:
+    # if [[ "${os_type}" == "Darwin" ]]; then
+    #     local mem_bytes
+    #     mem_bytes="$(sysctl -n hw.memsize 2>/dev/null || echo 0)"
+    #     HW_RAM_GIB=$(( mem_bytes / 1073741824 ))
+    #     # Free RAM on macOS: vm_stat gives pages; page size is 16384 on Apple Silicon, 4096 on Intel
+    #     local page_size
+    #     page_size="$(sysctl -n hw.pagesize 2>/dev/null || echo 4096)"
+    #     local pages_free
+    #     pages_free="$(vm_stat | awk '/^Pages free/{gsub(/\./, "", $3); print $3}')"
+    #     HW_RAM_FREE_GIB=$(( pages_free * page_size / 1073741824 ))
+    # else  # Linux
+    #     HW_RAM_GIB="$(awk '/^MemTotal/{printf "%d", $2/1048576}' /proc/meminfo)"
+    #     HW_RAM_FREE_GIB="$(awk '/^MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo)"
+    # fi
+
+    # ------------------------------------------------------------------
+    # GPU and backend detection
+    # ------------------------------------------------------------------
+    # Priority order: CUDA (nvidia-smi) → Metal (macOS) → CPU fallback
+    #
+    # TODO:
+    # CUDA path (Linux + Windows + macOS with eGPU):
+    # if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
+    #     HW_BACKEND="cuda"
+    #     HW_GPU_COUNT="$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1 | xargs)"
+    #     HW_GPU_MODEL="$(nvidia-smi --query-gpu=name --format=csv,noheader -i 0 | xargs)"
+    #     local vram_mib
+    #     vram_mib="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i 0 | xargs)"
+    #     HW_GPU_VRAM_GIB=$(( vram_mib / 1024 ))
+    #     local vram_free_mib
+    #     vram_free_mib="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0 | xargs)"
+    #     HW_GPU_VRAM_FREE_GIB=$(( vram_free_mib / 1024 ))
+    #
+    # Metal path (macOS — Apple Silicon or Intel Mac with integrated/discrete GPU):
+    # On Apple Silicon, GPU VRAM is shared with system RAM (unified memory).
+    # llama.cpp uses Metal backend automatically; no separate VRAM budget applies.
+    # elif [[ "${os_type}" == "Darwin" ]]; then
+    #     HW_BACKEND="metal"
+    #     HW_GPU_COUNT=1
+    #     HW_GPU_MODEL="$(system_profiler SPDisplaysDataType 2>/dev/null \
+    #         | awk '/Chipset Model/{print $3,$4,$5}' | head -1 | xargs || echo 'Apple GPU')"
+    #     if [[ "${arch}" == "arm64" ]]; then
+    #         # Apple Silicon: unified memory — report total RAM as "VRAM"
+    #         HW_GPU_VRAM_GIB="${HW_RAM_GIB}"
+    #         HW_GPU_VRAM_FREE_GIB="${HW_RAM_FREE_GIB}"
+    #         # Note for NGL probe: all layers fit "in GPU" for Apple Silicon unified memory;
+    #         # the real constraint is total RAM. The probe will still find the true ceiling.
+    #         log "[HW] Apple Silicon detected — unified memory. VRAM reported = total RAM."
+    #     else
+    #         # Intel Mac with discrete GPU: attempt to read VRAM from system_profiler
+    #         local vram_str
+    #         vram_str="$(system_profiler SPDisplaysDataType 2>/dev/null \
+    #             | awk '/VRAM/{print $2}' | head -1)"
+    #         HW_GPU_VRAM_GIB="${vram_str:-0}"
+    #         HW_GPU_VRAM_FREE_GIB=0  # not reliably readable on macOS Intel
+    #     fi
+    #
+    # CPU-only fallback:
+    # else
+    #     HW_BACKEND="cpu"
+    #     HW_GPU_COUNT=0
+    #     HW_GPU_MODEL="none"
+    #     HW_GPU_VRAM_GIB=0
+    #     HW_GPU_VRAM_FREE_GIB=0
+    #     log "[HW] No GPU detected — CPU-only mode. NGL probe will be skipped."
+    # fi
+
+    # ------------------------------------------------------------------
+    # Thermal sensor commands — OS and tool dependent
+    # ------------------------------------------------------------------
+    # HW_CPU_TEMP_CMD and HW_GPU_TEMP_CMD must be shell snippets that,
+    # when eval'd, print a single integer (°C) to stdout.
+    #
+    # TODO:
+    # if [[ "${os_type}" == "Darwin" ]]; then
+    #     # macOS: use powermetrics (requires sudo) or osx-cpu-temp if installed
+    #     if command -v osx-cpu-temp &>/dev/null; then
+    #         HW_CPU_TEMP_CMD="osx-cpu-temp | grep -oE '[0-9]+\.[0-9]+' | head -1 | cut -d. -f1"
+    #     else
+    #         # powermetrics needs sudo; skip thermal guard if unavailable
+    #         HW_CPU_TEMP_CMD=""
+    #         warn "[HW] CPU temp monitoring unavailable on macOS without osx-cpu-temp or sudo powermetrics"
+    #     fi
+    #     if [[ "${HW_BACKEND}" == "cuda" ]]; then
+    #         HW_GPU_TEMP_CMD="nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader -i 0"
+    #     else
+    #         # Metal GPU temps not readable without third-party tools; disable guard
+    #         HW_GPU_TEMP_CMD=""
+    #         warn "[HW] GPU temp monitoring unavailable for Metal backend"
+    #     fi
+    # else  # Linux
+    #     # Try lm-sensors first (covers most AMD/Intel CPUs)
+    #     if command -v sensors &>/dev/null; then
+    #         # AMD: look for Tctl; Intel: look for Package id 0
+    #         if sensors 2>/dev/null | grep -qi "tctl"; then
+    #             HW_CPU_TEMP_CMD="sensors 2>/dev/null | awk '/Tctl/{gsub(/[^0-9.]/,\"\",\$2); printf \"%d\", \$2}'"
+    #         else
+    #             HW_CPU_TEMP_CMD="sensors 2>/dev/null | awk '/Package id 0/{gsub(/[^0-9.]/,\"\",\$4); printf \"%d\", \$4}'"
+    #         fi
+    #     # Fallback: /sys/class/thermal (available on most Linux kernels)
+    #     elif [[ -f /sys/class/thermal/thermal_zone0/temp ]]; then
+    #         HW_CPU_TEMP_CMD="awk '{printf \"%d\", \$1/1000}' /sys/class/thermal/thermal_zone0/temp"
+    #     else
+    #         HW_CPU_TEMP_CMD=""
+    #         warn "[HW] CPU temp monitoring unavailable — install lm-sensors (apt install lm-sensors)"
+    #     fi
+    #     # Linux GPU temp: nvidia-smi for CUDA, nothing reliable for others
+    #     if [[ "${HW_BACKEND}" == "cuda" ]]; then
+    #         HW_GPU_TEMP_CMD="nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader -i 0"
+    #     else
+    #         HW_GPU_TEMP_CMD=""
+    #     fi
+    # fi
+    #
+    # If either temp command is empty, wait_cool() will skip that check with a warning.
+
     log "detect_hardware: not yet implemented — using placeholder defaults"
 }
 
