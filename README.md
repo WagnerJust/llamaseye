@@ -41,6 +41,20 @@ bash llamaseye.sh --model ~/Models/model.gguf --turbo-bench ~/llama-cpp-turboqua
 nohup bash llamaseye.sh --models-dir ~/Models --output-dir ./results > /dev/null 2>&1 &
 ```
 
+
+### Using a .env file
+
+All environment variables can be set in a `.env` file instead of passing flags every time:
+
+```sh
+cp example.env .env
+# Edit .env to match your paths and preferences
+source .env && bash llamaseye.sh --models-dir ~/Models
+```
+
+`example.env` in the repo root documents every available variable with its default value and a description. The most important ones to set are `LLAMA_BENCH_BIN` (path to your llama-bench binary) and `SWEEP_OUTPUT_DIR` (where results are written).
+
+`.env` is gitignored — your local paths and configuration will not be committed.
 ---
 
 ## Dependencies
