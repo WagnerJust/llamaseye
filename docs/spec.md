@@ -173,7 +173,14 @@ binary as normal.
 ### Verification at startup
 
 `detect_turbo_binary()` runs once at startup if `SWEEP_TURBO_BENCH_BIN` is set
-or `--turbo-bench` is passed. It must pass all three checks:
+or `--turbo-bench` is passed.
+
+**Detection method:** The turbo binary does not list supported cache types in its
+`--help` output, so `--help` cannot be used for verification. Instead, the binary
+is probed by running it with `-ctk turbo3` and no model. If the flag is rejected,
+the binary prints "unsupported", "invalid", or similar early in flag parsing. If the
+flag is accepted, the binary fails later with a model-loading error — which is fine
+and confirms turbo3 is supported.
 
 ```
 function detect_turbo_binary():
@@ -186,18 +193,15 @@ function detect_turbo_binary():
         TURBO_AVAILABLE = false
         return
 
-    help_output = run: {SWEEP_TURBO_BENCH_BIN} --help 2>&1
+    probe_out = run: {SWEEP_TURBO_BENCH_BIN} -ctk turbo3 2>&1  (ignore exit code)
 
-    if help_output does not contain "turbo3":
-        warn "Binary at {SWEEP_TURBO_BENCH_BIN} does not support turbo cache types."
-        warn "Ensure it was built from: github.com/TheTom/llama-cpp-turboquant"
-        warn "Branch: feature/turboquant-kv-cache  (master branch has no TurboQuant)"
+    if probe_out matches /unsupported|invalid|unknown.*(type|cache|ctk)/i:
+        warn "Binary does not appear to support turbo3 (flag rejected)"
         TURBO_AVAILABLE = false
         return
 
     TURBO_AVAILABLE = true
-    log "[TURBO] TurboQuant binary verified: {SWEEP_TURBO_BENCH_BIN}"
-    log "[TURBO] Turbo KV types enabled: turbo2, turbo3, turbo4"
+    log "turbo-bench available: {SWEEP_TURBO_BENCH_BIN}"
 ```
 
 If `TURBO_AVAILABLE=false`, all turbo combinations are silently excluded from
@@ -430,11 +434,18 @@ fa=0, ctk=f16, ctv=f16, nkvo=0, threads=system-default, b=2048, ub=512
 
 **Swept values:**
 
-Build the ngl list as:
+Build the full ngl list as:
 ```
 [0] + [4, 8, 12, ..., max_ngl - (max_ngl % 4)] + [max_ngl]
 ```
 Deduplicate and sort ascending. Always include `0` and `max_ngl` explicitly.
+
+**Smart default start:** By default, Phase 1 begins at `max_ngl − 2×step`
+rather than `0`, testing only the top ~3 values near the VRAM ceiling. Low-ngl
+configs rarely matter for large-context use cases and would significantly extend
+sweep time. Use `--start-ngl 0` (or `SWEEP_START_NGL=0`) for a full 0→max_ngl
+sweep. Use `--start-ngl N --ngl-dir down` to sweep downward from a specific cap
+(e.g. `--start-ngl 40 --ngl-dir down` tests 40, 36, 32, ...).
 
 **OOM handling:** If any ngl value OOMs mid-sweep (can happen if KV cache fills
 even though the model loaded in the probe), mark it skipped. Do NOT skip higher
@@ -622,11 +633,23 @@ Use `-n 0` (PP-only) and `-r 2` to keep runtime bounded on large contexts.
 
 `128, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072`
 
-**Stop condition:** On first OOM, record the failing size as the ceiling
-boundary and stop the sweep. Do not test larger sizes in this phase.
+**Stop condition and fallback behavior:** When the primary config OOMs at a
+given context size, Phase 6 does not immediately stop. It first tries
+progressively more memory-friendly alternatives before giving up on that size:
 
-**Records written:** One JSONL record per context size attempted (including the
-OOM record with `status: "oom"`).
+1. Flip `nkvo` — move the KV cache from VRAM to RAM
+2. More-compressed `ctk` types (`q4_0`, then turbo types if available) × both
+   `nkvo` values
+
+Only `ctk` and `nkvo` values already validated by Phases 2 and 4 are tried as
+fallbacks. If any fallback succeeds, the context size is recorded as successful
+(with the fallback parameters noted) and the sweep continues to the next larger
+size using that fallback config. If all fallbacks also OOM, the size is recorded
+as the ceiling boundary and the sweep stops.
+
+**Records written:** One JSONL record per context size and config attempted
+(including OOM records with `status: "oom"`). Fallback attempt records include
+a `fallback: true` annotation.
 
 ---
 
@@ -645,9 +668,36 @@ each valid intersection.
   reaches 128k context that no single-axis test would have found)
 - The actual peak t/s and peak context ceiling for the model
 
+### Phase 7 skip condition
+
+If `--start-ctx` (or `SWEEP_START_CTX`) was set and no context size at or above
+that value succeeded in Phase 6 (including fallbacks), Phase 7 is **skipped with
+a clear warning** rather than silently running a combination matrix at a tiny
+fallback context that doesn't meet the operator's stated requirement. Re-run
+Phase 6 with adjusted parameters if this occurs.
+
+### Auto-derived minimum filters
+
+When `--min-*` flags are not explicitly set, Phase 7 auto-applies minimum filters
+to keep the combination matrix focused on high-value configs. Each auto-default
+is logged at startup so the operator can see exactly what is active:
+
+| Axis | Auto default | Override to disable |
+|------|-------------|---------------------|
+| `ngl` | `max_ngl − 1 step` (top 2 ngl values) | `--min-ngl 0` |
+| `threads` | `HW_CPU_PHYSICAL` (physical core count) | `--min-threads 1` |
+| `ctx` | `--start-ctx` value if set, else `8192` | `--min-ctx 0` |
+| `ctk` | `q8_0` | `--min-ctk q4_0` |
+| `b` | `BEST_B / 2` | `--min-b 512` |
+
+These auto-defaults do not affect phases 1–6 — those still run full discovery.
+The `--min-*` flags (and these auto-defaults) only filter what enters the
+Phase 7 cartesian product.
+
 ### Building the combination set
 
-From each phase, collect the set of values that produced `status: "ok"`:
+From each phase, collect the set of values that produced `status: "ok"`, then
+apply active minimum filters (explicit `--min-*` flags or auto-defaults above):
 
 ```
 ngl_values    = all ngl values from Phase 1 where status=ok

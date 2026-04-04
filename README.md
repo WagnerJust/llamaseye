@@ -55,6 +55,7 @@ source .env && bash llamaseye.sh --models-dir ~/Models
 Every CLI flag has a corresponding environment variable — env vars set the default value, and CLI flags override them when both are provided. `example.env` in the repo root documents every available variable with its default value and a description. The most important ones to set are `LLAMA_BENCH_BIN` (path to your llama-bench binary) and `SWEEP_OUTPUT_DIR` (where results are written).
 
 `.env` is gitignored — your local paths and configuration will not be committed.
+
 ---
 
 ## Dependencies
@@ -95,11 +96,9 @@ git clone https://github.com/TheTom/llama-cpp-turboquant \
 cd llama-cpp-turboquant
 cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --target llama-bench -j$(nproc)
-
-# Verify TurboQuant compiled in:
-./build/bin/llama-bench --help 2>&1 | grep turbo
-# Must print: turbo2, turbo3, turbo4 — if nothing shows, wrong branch was cloned
 ```
+
+llamaseye verifies the binary at startup by probing it with `-ctk turbo3`. If the flag is accepted, turbo types are enabled. If the path is missing or the flag is rejected, turbo types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — the script handles an invalid path gracefully.
 
 ### Other dependencies
 
@@ -118,25 +117,62 @@ cmake --build build --config Release --target llama-bench -j$(nproc)
 
 ## Key flags
 
+### Core
+
 | Flag | Description |
 |------|-------------|
 | `--model <path>` | Single GGUF model to benchmark |
 | `--models-dir <dir>` | Directory to scan for GGUF models |
 | `--model-list <file>` | Text file listing model filenames (one per line) |
-| `--output-dir <dir>` | Root directory for all results (default: `./results`) |
+| `--output-dir <dir>` | Root directory for all results (default: `~/Models/bench/sweep`) |
 | `--llama-bench <path>` | Path to standard llama-bench binary |
-| `--turbo-bench <path>` | Path to TurboQuant llama-bench binary (enables turbo KV types) |
-| `--ngl-step <n>` | Step size for NGL axis sweep (default: 5) |
+| `--turbo-bench <path>` | Path to TurboQuant llama-bench binary (enables turbo2/3/4 KV types) |
+| `--ngl-step <n>` | Step size for NGL axis sweep (default: 4) |
 | `--repetitions <n>` | Repetitions per benchmark run (default: 3) |
-| `--timeout <s>` | Per-run timeout in seconds (default: 300) |
-| `--resume` | Resume a previous sweep, skipping completed runs |
-| `--overwrite` | Ignore existing state and re-run everything |
+| `--timeout <s>` | Per-run timeout in seconds (default: 600) |
+| `--resume` | Resume a previous sweep, skipping completed phases |
+| `--overwrite` | Delete existing output dir and re-run everything |
 | `--only-phases <list>` | Comma-separated list of phase numbers to run (e.g. `0,1,7`) |
 | `--skip-phases <list>` | Comma-separated list of phase numbers to skip |
 | `--dry-run` | Print what would run without executing |
 | `--no-confirm` | Skip the pre-run confirmation prompt |
-| `--cpu-temp-limit <°C>` | Pause if CPU exceeds this temperature (default: 85) |
-| `--gpu-temp-limit <°C>` | Pause if GPU exceeds this temperature (default: 80) |
+| `--cpu-temp-limit <°C>` | Pause if CPU exceeds this temperature (default: 88) |
+| `--gpu-temp-limit <°C>` | Pause if GPU exceeds this temperature (default: 81) |
+| `--no-thermal-guard` | Disable thermal polling entirely |
+
+### Axis start and direction
+
+These control where each phase begins its sweep and which direction it moves. Direction flags accept `up` or `down`.
+
+| Flag | Description |
+|------|-------------|
+| `--start-ngl <n>` | Begin NGL sweep at this value (default: `MAX_NGL − 2×step`) |
+| `--ngl-dir up\|down` | NGL sweep direction (default: `up` = toward MAX_NGL) |
+| `--start-threads <n>` | Begin thread count sweep at this value |
+| `--threads-dir up\|down` | Thread sweep direction (default: `up`) |
+| `--start-ctx <n>` | Begin context sweep at this prompt size; also sets Phase 7 min-ctx |
+| `--ctx-dir up\|down` | Context sweep direction (default: `up` = toward 131072) |
+| `--start-ctk <type>` | Begin KV quant sweep at this type |
+| `--ctk-dir up\|down` | KV type sweep direction (default: `up` = toward more compression) |
+| `--start-b <n>` | Begin batch size sweep at this value |
+| `--b-dir up\|down` | Batch sweep direction (default: `up`) |
+| `--start-ub <n>` | Begin ubatch size sweep at this value |
+| `--ub-dir up\|down` | Ubatch sweep direction (default: `up`) |
+| `--start-fa 0\|1` | Begin FA sweep at this value (default: `0`) |
+| `--fa-dir up\|down` | FA sweep direction (default: `up` = 0→1) |
+
+### Phase 7 minimum filters
+
+These filter the Phase 7 combination matrix without affecting phases 1–6. When not set, smart defaults are derived automatically (see [Smart defaults](#smart-defaults)).
+
+| Flag | Description |
+|------|-------------|
+| `--min-ngl <n>` | Exclude NGL values below N from Phase 7 |
+| `--min-threads <n>` | Exclude thread counts below N from Phase 7 |
+| `--min-ctx <n>` | Exclude context sizes below N from Phase 7 |
+| `--min-ctk <type>` | Exclude KV types below TYPE (by quality) from Phase 7 |
+| `--min-b <n>` | Exclude batch sizes below N from Phase 7 |
+| `--min-ub <n>` | Exclude ubatch sizes below N from Phase 7 |
 
 ---
 
@@ -147,12 +183,18 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 | Variable | Equivalent flag | Example |
 |----------|----------------|---------|
 | `SWEEP_RESUME` | `--resume` | `SWEEP_RESUME=true` |
+| `SWEEP_OVERWRITE` | `--overwrite` | `SWEEP_OVERWRITE=true` |
 | `SWEEP_SKIP_PHASES` | `--skip-phases` | `SWEEP_SKIP_PHASES=7` |
 | `SWEEP_ONLY_PHASES` | `--only-phases` | `SWEEP_ONLY_PHASES=0,1,6` |
+| `SWEEP_NGL_STEP` | `--ngl-step` | `SWEEP_NGL_STEP=2` |
+| `SWEEP_START_NGL` | `--start-ngl` | `SWEEP_START_NGL=40` |
+| `SWEEP_NGL_DIR` | `--ngl-dir` | `SWEEP_NGL_DIR=down` |
 | `SWEEP_START_CTX` | `--start-ctx` | `SWEEP_START_CTX=32768` |
 | `SWEEP_MIN_CTX` | `--min-ctx` | `SWEEP_MIN_CTX=32768` |
+| `SWEEP_MIN_NGL` | `--min-ngl` | `SWEEP_MIN_NGL=16` |
 | `SWEEP_MIN_CTK` | `--min-ctk` | `SWEEP_MIN_CTK=q8_0` |
-| `SWEEP_START_NGL` | `--start-ngl` | `SWEEP_START_NGL=40` |
+| `SWEEP_MIN_THREADS` | `--min-threads` | `SWEEP_MIN_THREADS=8` |
+| `SWEEP_MIN_B` | `--min-b` | `SWEEP_MIN_B=1024` |
 | `SWEEP_MODEL_LIST` | `--model-list` | `SWEEP_MODEL_LIST=~/list.txt` |
 | `SWEEP_NO_CONFIRM` | `--no-confirm` | `SWEEP_NO_CONFIRM=true` |
 | `SWEEP_DRY_RUN` | `--dry-run` | `SWEEP_DRY_RUN=true` |
@@ -163,14 +205,51 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 
 | Phase | Name | What varies | Everything else |
 |-------|------|-------------|-----------------|
-| 0 | **NGL Probe** | ngl from 0 → max in coarse steps | Defaults — establishes max viable ngl |
-| 1 | **NGL Axis** | ngl fine-grained around Phase 0 optimum | Defaults |
-| 2 | **FA + KV Quant Axis** | flash attention on/off × KV cache type | Best ngl from Phase 1 |
-| 3 | **Thread Count** | CPU thread count variants | Best ngl, best FA/KV |
-| 4 | **KV Offload** | KV cache offload ratio 0.0 → 1.0 | Best ngl, best FA/KV, best threads |
+| 0 | **NGL Probe** | Binary search for max stable GPU layers | Defaults — establishes MAX_NGL |
+| 1 | **NGL Axis** | NGL near MAX_NGL by default (use `--start-ngl 0` for full sweep) | Defaults |
+| 2 | **FA + KV Quant Axis** | Flash attention on/off × KV cache type | Best NGL from Phase 1 |
+| 3 | **Thread Count** | CPU thread count variants | Best NGL, best FA/KV |
+| 4 | **KV Offload** | KV cache in VRAM (nkvo=0) vs RAM (nkvo=1) | Best NGL, best FA/KV, best threads |
 | 5 | **Batch Size** | ubatch and batch size variants | Best values so far |
-| 6 | **Context Ceiling** | Context size scaled up to OOM/timeout | Best values so far |
-| 7 | **Full Combination Matrix** | Cartesian product of all best-per-axis values | — |
+| 6 | **Context Ceiling** | Prompt size scaled up to OOM/timeout, with fallback configs | Best values so far |
+| 7 | **Full Combination Matrix** | Cartesian product of all best-per-axis working sets | — |
+
+---
+
+## Smart defaults
+
+Common use cases work without any extra flags. The key smart behaviors:
+
+### Phase 1 — NGL start
+
+Phase 1 starts at `MAX_NGL − 2×step` by default, testing only the top ~3 NGL values near the VRAM ceiling. Low-NGL configs rarely matter for performance. Use `--start-ngl 0` for a full 0→MAX_NGL sweep, or `--start-ngl 40 --ngl-dir down` to sweep downward from a specific cap.
+
+### Phase 6 — Context fallbacks
+
+When the primary config OOMs at a given context size, Phase 6 automatically tries progressively more memory-friendly alternatives before giving up:
+1. Flip nkvo (move KV cache from VRAM → RAM)
+2. More-compressed ctk types (q4_0, turbo types) × both nkvo values
+
+Only ctk/nkvo values already validated by Phases 2 and 4 are tried.
+
+### Phase 7 — Auto-derived minimum filters
+
+When `--min-*` flags are not set, Phase 7 auto-applies minimum filters so the combination matrix stays focused on high-value configs:
+
+| Axis | Auto default | Override to disable |
+|------|-------------|---------------------|
+| NGL | `MAX_NGL − 1 step` (top 2 values) | `--min-ngl 0` |
+| Threads | `HW_CPU_PHYSICAL` (physical core count) | `--min-threads 1` |
+| Context | `--start-ctx` value, else `8192` | `--min-ctx 0` |
+| KV type | `q8_0` | `--min-ctk q4_0` |
+| Batch | `BEST_B / 2` | `--min-b 512` |
+
+If `--start-ctx` is set and no context at or above that size succeeds in Phase 6, Phase 7 is skipped with a clear warning rather than silently running a useless matrix at a tiny fallback context.
+
+**KV quality order** (low → high): `turbo2 turbo3 turbo4 q4_0 q8_0 f16`
+- `--min-ctk turbo3` keeps turbo3, turbo4, q4_0, q8_0, f16 (excludes only turbo2)
+- `--min-ctk q8_0` keeps q8_0 and f16 only (the default)
+- `--min-ctk q4_0` includes all types (effectively disables the ctk filter)
 
 ---
 
@@ -178,7 +257,13 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 
 Passing `--turbo-bench <path>` enables three additional KV cache quantisation types: **turbo2**, **turbo3**, and **turbo4**, sourced from the [llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant) fork. These compress the KV cache 3–6× compared to f16, freeing VRAM for more layers or larger contexts without a significant quality penalty.
 
-The TurboQuant binary is verified at startup (a quick `--help` probe). If the path is missing or returns an error, turbo KV types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — the script handles an invalid path gracefully.
+| Type | Compression vs f16 | Flash attn required |
+|------|--------------------|---------------------|
+| `turbo2` | ~6.4× | No |
+| `turbo3` | ~4.3× | Yes (auto-enabled) |
+| `turbo4` | ~3.2× | Yes (auto-enabled) |
+
+The TurboQuant binary is verified at startup by probing it with `-ctk turbo3`. If the flag is accepted, turbo types are enabled. If the path is missing or the flag is rejected, turbo types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — the script handles an invalid path gracefully.
 
 ---
 
@@ -193,7 +278,7 @@ results/
     ├── sweep.md          # Human-readable Markdown summary table
     ├── sweep.log         # Full execution log
     ├── hardware.json     # Hardware snapshot captured at start
-    ├── state.json        # Resume state (completed run IDs + best values)
+    ├── state.json        # Resume state (completed phases + best values + working sets)
     └── raw/
         └── <run-id>.txt  # Raw llama-bench stdout for each run
 ```
@@ -237,7 +322,7 @@ All sweep parameters are derived from these detected values. The script contains
 
 ## Design philosophy
 
-Each phase sweeps exactly one axis while holding everything else at sane defaults. The only cross-phase dependency is `max_ngl`, which is established by Phase 0 and used as the ceiling for all subsequent phases. Phases 1–6 each produce one "best value" for their axis. Phase 7 takes the Cartesian product of all best-per-axis values and runs the full combination matrix, confirming which configs compose well and revealing the true peak configuration. This one-variable-at-a-time discipline keeps results interpretable and makes it straightforward to re-run individual phases in isolation with `--only-phases`.
+Each phase sweeps exactly one axis while holding everything else at sane defaults. The only cross-phase dependency is `MAX_NGL`, which is established by Phase 0 and used as the ceiling for all subsequent phases. Phases 1–6 each produce a working set of values for their axis. Phase 7 takes the Cartesian product of all working sets and runs the full combination matrix, confirming which configs compose well and revealing the true peak configuration. This one-variable-at-a-time discipline keeps results interpretable and makes it straightforward to re-run individual phases in isolation with `--only-phases`.
 
 ---
 
