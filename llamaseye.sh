@@ -96,6 +96,26 @@ MODEL_PATH=""                # current model absolute path
 MODEL_STEM=""                # basename without extension
 OUTPUT_MODEL_DIR=""          # ${SWEEP_OUTPUT_DIR}/${MODEL_STEM}/
 
+# Per-sweep working sets (accumulated as phases complete)
+BEST_NGL=99
+BEST_FA=0
+BEST_CTK="f16"
+BEST_CTV="f16"
+BEST_THREADS=""          # empty = system default
+BEST_NKVO=0
+BEST_B=2048
+BEST_UB=512
+BEST_CTX=512
+
+WS_NGL=""                # space-separated ok NGL values from phase 1
+WS_FA_CTK=""             # newline-separated "fa ctk ctv" combos from phase 2
+WS_THREADS=""            # space-separated ok thread counts from phase 3
+WS_NKVO=""               # space-separated ok nkvo values from phase 4
+WS_B_UB=""               # newline-separated "b ub" pairs from phase 5
+WS_CTX=""                # space-separated ok context sizes from phase 6
+
+PHASES_COMPLETE=""        # space-separated completed phase numbers
+
 # =============================================================================
 # CLI FLAGS — set by parse_args()
 # =============================================================================
@@ -424,6 +444,18 @@ parse_args() {
 }
 
 # -----------------------------------------------------------------------------
+# gen_run_id
+#   Generate a short unique run identifier (8 hex chars).
+# -----------------------------------------------------------------------------
+gen_run_id() {
+    if command -v uuidgen &>/dev/null; then
+        uuidgen | tr -d '-' | head -c 8 | tr '[:upper:]' '[:lower:]'
+    else
+        date +%s%N 2>/dev/null | md5sum | head -c 8 || date +%s | md5sum | head -c 8
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # detect_hardware
 #   Populate all HW_* variables by querying the OS and nvidia-smi.
 #
@@ -447,87 +479,84 @@ detect_hardware() {
     # ------------------------------------------------------------------
     # CPU — model string, physical cores, logical threads
     # ------------------------------------------------------------------
-    # TODO:
-    # if [[ "${os_type}" == "Darwin" ]]; then
-    #     HW_CPU_MODEL="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'unknown')"
-    #     HW_CPU_PHYSICAL="$(sysctl -n hw.physicalcpu 2>/dev/null || echo 1)"
-    #     HW_CPU_LOGICAL="$(sysctl -n hw.logicalcpu 2>/dev/null || echo 1)"
-    # else  # Linux
-    #     HW_CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
-    #     HW_CPU_PHYSICAL="$(lscpu | awk -F: '/^Core\(s\) per socket/{cores=$2} /^Socket\(s\)/{sockets=$2} END{print cores*sockets}' | xargs)"
-    #     HW_CPU_LOGICAL="$(nproc --all 2>/dev/null || grep -c '^processor' /proc/cpuinfo)"
-    # fi
+    if [[ "${os_type}" == "Darwin" ]]; then
+        HW_CPU_MODEL="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'unknown')"
+        HW_CPU_PHYSICAL="$(sysctl -n hw.physicalcpu 2>/dev/null || echo 1)"
+        HW_CPU_LOGICAL="$(sysctl -n hw.logicalcpu 2>/dev/null || echo 1)"
+    else  # Linux
+        HW_CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+        HW_CPU_PHYSICAL="$(lscpu | awk -F: '/^Core\(s\) per socket/{cores=$2} /^Socket\(s\)/{sockets=$2} END{print cores*sockets}' | xargs)"
+        HW_CPU_LOGICAL="$(nproc --all 2>/dev/null || grep -c '^processor' /proc/cpuinfo)"
+    fi
 
     # ------------------------------------------------------------------
     # RAM — total and free GiB
     # ------------------------------------------------------------------
-    # TODO:
-    # if [[ "${os_type}" == "Darwin" ]]; then
-    #     local mem_bytes
-    #     mem_bytes="$(sysctl -n hw.memsize 2>/dev/null || echo 0)"
-    #     HW_RAM_GIB=$(( mem_bytes / 1073741824 ))
-    #     # Free RAM on macOS: vm_stat gives pages; page size is 16384 on Apple Silicon, 4096 on Intel
-    #     local page_size
-    #     page_size="$(sysctl -n hw.pagesize 2>/dev/null || echo 4096)"
-    #     local pages_free
-    #     pages_free="$(vm_stat | awk '/^Pages free/{gsub(/\./, "", $3); print $3}')"
-    #     HW_RAM_FREE_GIB=$(( pages_free * page_size / 1073741824 ))
-    # else  # Linux
-    #     HW_RAM_GIB="$(awk '/^MemTotal/{printf "%d", $2/1048576}' /proc/meminfo)"
-    #     HW_RAM_FREE_GIB="$(awk '/^MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo)"
-    # fi
+    if [[ "${os_type}" == "Darwin" ]]; then
+        local mem_bytes
+        mem_bytes="$(sysctl -n hw.memsize 2>/dev/null || echo 0)"
+        HW_RAM_GIB=$(( mem_bytes / 1073741824 ))
+        # Free RAM on macOS: vm_stat gives pages; page size is 16384 on Apple Silicon, 4096 on Intel
+        local page_size
+        page_size="$(sysctl -n hw.pagesize 2>/dev/null || echo 4096)"
+        local pages_free
+        pages_free="$(vm_stat | awk '/^Pages free/{gsub(/\./, "", $3); print $3}')"
+        HW_RAM_FREE_GIB=$(( pages_free * page_size / 1073741824 ))
+    else  # Linux
+        HW_RAM_GIB="$(awk '/^MemTotal/{printf "%d", $2/1048576}' /proc/meminfo)"
+        HW_RAM_FREE_GIB="$(awk '/^MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo)"
+    fi
 
     # ------------------------------------------------------------------
     # GPU and backend detection
     # ------------------------------------------------------------------
     # Priority order: CUDA (nvidia-smi) → Metal (macOS) → CPU fallback
     #
-    # TODO:
     # CUDA path (Linux + Windows + macOS with eGPU):
-    # if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
-    #     HW_BACKEND="cuda"
-    #     HW_GPU_COUNT="$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1 | xargs)"
-    #     HW_GPU_MODEL="$(nvidia-smi --query-gpu=name --format=csv,noheader -i 0 | xargs)"
-    #     local vram_mib
-    #     vram_mib="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i 0 | xargs)"
-    #     HW_GPU_VRAM_GIB=$(( vram_mib / 1024 ))
-    #     local vram_free_mib
-    #     vram_free_mib="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0 | xargs)"
-    #     HW_GPU_VRAM_FREE_GIB=$(( vram_free_mib / 1024 ))
-    #
+    if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
+        HW_BACKEND="cuda"
+        HW_GPU_COUNT="$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1 | xargs)"
+        HW_GPU_MODEL="$(nvidia-smi --query-gpu=name --format=csv,noheader -i 0 | xargs)"
+        local vram_mib
+        vram_mib="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i 0 | xargs)"
+        HW_GPU_VRAM_GIB=$(( vram_mib / 1024 ))
+        local vram_free_mib
+        vram_free_mib="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i 0 | xargs)"
+        HW_GPU_VRAM_FREE_GIB=$(( vram_free_mib / 1024 ))
+
     # Metal path (macOS — Apple Silicon or Intel Mac with integrated/discrete GPU):
     # On Apple Silicon, GPU VRAM is shared with system RAM (unified memory).
     # llama.cpp uses Metal backend automatically; no separate VRAM budget applies.
-    # elif [[ "${os_type}" == "Darwin" ]]; then
-    #     HW_BACKEND="metal"
-    #     HW_GPU_COUNT=1
-    #     HW_GPU_MODEL="$(system_profiler SPDisplaysDataType 2>/dev/null \
-    #         | awk '/Chipset Model/{print $3,$4,$5}' | head -1 | xargs || echo 'Apple GPU')"
-    #     if [[ "${arch}" == "arm64" ]]; then
-    #         # Apple Silicon: unified memory — report total RAM as "VRAM"
-    #         HW_GPU_VRAM_GIB="${HW_RAM_GIB}"
-    #         HW_GPU_VRAM_FREE_GIB="${HW_RAM_FREE_GIB}"
-    #         # Note for NGL probe: all layers fit "in GPU" for Apple Silicon unified memory;
-    #         # the real constraint is total RAM. The probe will still find the true ceiling.
-    #         log "[HW] Apple Silicon detected — unified memory. VRAM reported = total RAM."
-    #     else
-    #         # Intel Mac with discrete GPU: attempt to read VRAM from system_profiler
-    #         local vram_str
-    #         vram_str="$(system_profiler SPDisplaysDataType 2>/dev/null \
-    #             | awk '/VRAM/{print $2}' | head -1)"
-    #         HW_GPU_VRAM_GIB="${vram_str:-0}"
-    #         HW_GPU_VRAM_FREE_GIB=0  # not reliably readable on macOS Intel
-    #     fi
-    #
+    elif [[ "${os_type}" == "Darwin" ]]; then
+        HW_BACKEND="metal"
+        HW_GPU_COUNT=1
+        HW_GPU_MODEL="$(system_profiler SPDisplaysDataType 2>/dev/null \
+            | awk '/Chipset Model/{print $3,$4,$5}' | head -1 | xargs || echo 'Apple GPU')"
+        if [[ "${arch}" == "arm64" ]]; then
+            # Apple Silicon: unified memory — report total RAM as "VRAM"
+            HW_GPU_VRAM_GIB="${HW_RAM_GIB}"
+            HW_GPU_VRAM_FREE_GIB="${HW_RAM_FREE_GIB}"
+            # Note for NGL probe: all layers fit "in GPU" for Apple Silicon unified memory;
+            # the real constraint is total RAM. The probe will still find the true ceiling.
+            log "[HW] Apple Silicon detected — unified memory. VRAM reported = total RAM."
+        else
+            # Intel Mac with discrete GPU: attempt to read VRAM from system_profiler
+            local vram_str
+            vram_str="$(system_profiler SPDisplaysDataType 2>/dev/null \
+                | awk '/VRAM/{print $2}' | head -1)"
+            HW_GPU_VRAM_GIB="${vram_str:-0}"
+            HW_GPU_VRAM_FREE_GIB=0  # not reliably readable on macOS Intel
+        fi
+
     # CPU-only fallback:
-    # else
-    #     HW_BACKEND="cpu"
-    #     HW_GPU_COUNT=0
-    #     HW_GPU_MODEL="none"
-    #     HW_GPU_VRAM_GIB=0
-    #     HW_GPU_VRAM_FREE_GIB=0
-    #     log "[HW] No GPU detected — CPU-only mode. NGL probe will be skipped."
-    # fi
+    else
+        HW_BACKEND="cpu"
+        HW_GPU_COUNT=0
+        HW_GPU_MODEL="none"
+        HW_GPU_VRAM_GIB=0
+        HW_GPU_VRAM_FREE_GIB=0
+        log "[HW] No GPU detected — CPU-only mode. NGL probe will be skipped."
+    fi
 
     # ------------------------------------------------------------------
     # Thermal sensor commands — OS and tool dependent
@@ -535,50 +564,67 @@ detect_hardware() {
     # HW_CPU_TEMP_CMD and HW_GPU_TEMP_CMD must be shell snippets that,
     # when eval'd, print a single integer (°C) to stdout.
     #
-    # TODO:
-    # if [[ "${os_type}" == "Darwin" ]]; then
-    #     # macOS: use powermetrics (requires sudo) or osx-cpu-temp if installed
-    #     if command -v osx-cpu-temp &>/dev/null; then
-    #         HW_CPU_TEMP_CMD="osx-cpu-temp | grep -oE '[0-9]+\.[0-9]+' | head -1 | cut -d. -f1"
-    #     else
-    #         # powermetrics needs sudo; skip thermal guard if unavailable
-    #         HW_CPU_TEMP_CMD=""
-    #         warn "[HW] CPU temp monitoring unavailable on macOS without osx-cpu-temp or sudo powermetrics"
-    #     fi
-    #     if [[ "${HW_BACKEND}" == "cuda" ]]; then
-    #         HW_GPU_TEMP_CMD="nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader -i 0"
-    #     else
-    #         # Metal GPU temps not readable without third-party tools; disable guard
-    #         HW_GPU_TEMP_CMD=""
-    #         warn "[HW] GPU temp monitoring unavailable for Metal backend"
-    #     fi
-    # else  # Linux
-    #     # Try lm-sensors first (covers most AMD/Intel CPUs)
-    #     if command -v sensors &>/dev/null; then
-    #         # AMD: look for Tctl; Intel: look for Package id 0
-    #         if sensors 2>/dev/null | grep -qi "tctl"; then
-    #             HW_CPU_TEMP_CMD="sensors 2>/dev/null | awk '/Tctl/{gsub(/[^0-9.]/,\"\",\$2); printf \"%d\", \$2}'"
-    #         else
-    #             HW_CPU_TEMP_CMD="sensors 2>/dev/null | awk '/Package id 0/{gsub(/[^0-9.]/,\"\",\$4); printf \"%d\", \$4}'"
-    #         fi
-    #     # Fallback: /sys/class/thermal (available on most Linux kernels)
-    #     elif [[ -f /sys/class/thermal/thermal_zone0/temp ]]; then
-    #         HW_CPU_TEMP_CMD="awk '{printf \"%d\", \$1/1000}' /sys/class/thermal/thermal_zone0/temp"
-    #     else
-    #         HW_CPU_TEMP_CMD=""
-    #         warn "[HW] CPU temp monitoring unavailable — install lm-sensors (apt install lm-sensors)"
-    #     fi
-    #     # Linux GPU temp: nvidia-smi for CUDA, nothing reliable for others
-    #     if [[ "${HW_BACKEND}" == "cuda" ]]; then
-    #         HW_GPU_TEMP_CMD="nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader -i 0"
-    #     else
-    #         HW_GPU_TEMP_CMD=""
-    #     fi
-    # fi
+    if [[ "${os_type}" == "Darwin" ]]; then
+        # macOS: use powermetrics (requires sudo) or osx-cpu-temp if installed
+        if command -v osx-cpu-temp &>/dev/null; then
+            HW_CPU_TEMP_CMD="osx-cpu-temp | grep -oE '[0-9]+\.[0-9]+' | head -1 | cut -d. -f1"
+        else
+            # powermetrics needs sudo; skip thermal guard if unavailable
+            HW_CPU_TEMP_CMD=""
+            warn "[HW] CPU temp monitoring unavailable on macOS without osx-cpu-temp or sudo powermetrics"
+        fi
+        if [[ "${HW_BACKEND}" == "cuda" ]]; then
+            HW_GPU_TEMP_CMD="nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader -i 0"
+        else
+            # Metal GPU temps not readable without third-party tools; disable guard
+            HW_GPU_TEMP_CMD=""
+            warn "[HW] GPU temp monitoring unavailable for Metal backend"
+        fi
+    else  # Linux
+        # Try lm-sensors first (covers most AMD/Intel CPUs)
+        if command -v sensors &>/dev/null; then
+            # AMD: look for Tctl; Intel: look for Package id 0
+            if sensors 2>/dev/null | grep -qi "tctl"; then
+                HW_CPU_TEMP_CMD="sensors 2>/dev/null | awk '/Tctl/{gsub(/[^0-9.]/,\"\",\$2); printf \"%d\", \$2}'"
+            else
+                HW_CPU_TEMP_CMD="sensors 2>/dev/null | awk '/Package id 0/{gsub(/[^0-9.]/,\"\",\$4); printf \"%d\", \$4}'"
+            fi
+        # Fallback: /sys/class/thermal (available on most Linux kernels)
+        elif [[ -f /sys/class/thermal/thermal_zone0/temp ]]; then
+            HW_CPU_TEMP_CMD="awk '{printf \"%d\", \$1/1000}' /sys/class/thermal/thermal_zone0/temp"
+        else
+            HW_CPU_TEMP_CMD=""
+            warn "[HW] CPU temp monitoring unavailable — install lm-sensors (apt install lm-sensors)"
+        fi
+        # Linux GPU temp: nvidia-smi for CUDA, nothing reliable for others
+        if [[ "${HW_BACKEND}" == "cuda" ]]; then
+            HW_GPU_TEMP_CMD="nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader -i 0"
+        else
+            HW_GPU_TEMP_CMD=""
+        fi
+    fi
     #
     # If either temp command is empty, wait_cool() will skip that check with a warning.
 
-    log "detect_hardware: not yet implemented — using placeholder defaults"
+    if [[ -n "${OUTPUT_MODEL_DIR:-}" && -d "${OUTPUT_MODEL_DIR}" ]]; then
+        jq -n \
+            --arg cpu_model "${HW_CPU_MODEL}" \
+            --argjson cpu_physical "${HW_CPU_PHYSICAL}" \
+            --argjson cpu_logical "${HW_CPU_LOGICAL}" \
+            --argjson ram_gib "${HW_RAM_GIB}" \
+            --argjson ram_free "${HW_RAM_FREE_GIB}" \
+            --argjson gpu_count "${HW_GPU_COUNT}" \
+            --arg gpu_model "${HW_GPU_MODEL}" \
+            --argjson gpu_vram "${HW_GPU_VRAM_GIB}" \
+            --argjson gpu_vram_free "${HW_GPU_VRAM_FREE_GIB}" \
+            --arg backend "${HW_BACKEND}" \
+            '{cpu_model:$cpu_model,cpu_physical_cores:$cpu_physical,cpu_logical_threads:$cpu_logical,
+              ram_gib:$ram_gib,ram_free_gib_at_start:$ram_free,gpu_count:$gpu_count,
+              gpu_model:$gpu_model,gpu_vram_gib:$gpu_vram,gpu_vram_free_gib_at_start:$gpu_vram_free,
+              backend:$backend}' > "${OUTPUT_MODEL_DIR}/hardware.json"
+    fi
+    log "[HW] CPU: ${HW_CPU_MODEL} (${HW_CPU_PHYSICAL}P/${HW_CPU_LOGICAL}L)  RAM: ${HW_RAM_GIB} GiB"
+    log "[HW] GPU: ${HW_GPU_MODEL}  VRAM: ${HW_GPU_VRAM_GIB} GiB (${HW_GPU_VRAM_FREE_GIB} free)  Backend: ${HW_BACKEND}"
 }
 
 # -----------------------------------------------------------------------------
@@ -589,16 +635,14 @@ detect_hardware() {
 #   otherwise.
 # -----------------------------------------------------------------------------
 detect_turbo_binary() {
-    # TODO: implement
-    #   [[ -z "${SWEEP_TURBO_BENCH_BIN}" ]] && return 0
-    #   [[ ! -x "${SWEEP_TURBO_BENCH_BIN}" ]] && warn "turbo-bench not executable" && return 0
-    #   "${SWEEP_TURBO_BENCH_BIN}" --help 2>&1 | grep -qi "turbo3" || {
-    #       warn "turbo-bench binary does not appear to support turbo3"
-    #       return 0
-    #   }
-    #   TURBO_AVAILABLE=true
-    #   log "turbo-bench available: ${SWEEP_TURBO_BENCH_BIN}"
-    log "detect_turbo_binary: not yet implemented"
+    [[ -z "${SWEEP_TURBO_BENCH_BIN}" ]] && return 0
+    [[ ! -x "${SWEEP_TURBO_BENCH_BIN}" ]] && warn "turbo-bench not executable" && return 0
+    "${SWEEP_TURBO_BENCH_BIN}" --help 2>&1 | grep -qi "turbo3" || {
+        warn "turbo-bench binary does not appear to support turbo3"
+        return 0
+    }
+    TURBO_AVAILABLE=true
+    log "turbo-bench available: ${SWEEP_TURBO_BENCH_BIN}"
 }
 
 # -----------------------------------------------------------------------------
@@ -608,21 +652,20 @@ detect_turbo_binary() {
 #   detected hardware before committing to a long run.
 # -----------------------------------------------------------------------------
 print_hardware_summary() {
-    # TODO: implement
-    #   printf with column alignment, something like:
-    #
-    #   ┌─────────────────────────────────────────────┐
-    #   │  Hardware Summary                           │
-    #   ├──────────────┬──────────────────────────────┤
-    #   │ CPU          │ ${HW_CPU_MODEL}               │
-    #   │ Cores        │ ${HW_CPU_PHYSICAL}P / ${HW_CPU_LOGICAL}L  │
-    #   │ RAM          │ ${HW_RAM_GIB} GiB (${HW_RAM_FREE_GIB} free) │
-    #   │ GPU [0]      │ ${HW_GPU_MODEL}               │
-    #   │ VRAM         │ ${HW_GPU_VRAM_GIB} GiB (${HW_GPU_VRAM_FREE_GIB} free) │
-    #   │ Backend      │ ${HW_BACKEND}                 │
-    #   │ Turbo bench  │ ${TURBO_AVAILABLE}            │
-    #   └──────────────┴──────────────────────────────┘
-    echo "[print_hardware_summary] TODO: implement hardware summary table"
+    printf '\n'
+    printf '┌─────────────────────────────────────────────────────┐\n'
+    printf '│  Hardware Summary                                   │\n'
+    printf '├────────────────────┬────────────────────────────────┤\n'
+    printf '│ %-18s │ %-30s │\n' "CPU" "${HW_CPU_MODEL:0:30}"
+    printf '│ %-18s │ %-30s │\n' "Cores" "${HW_CPU_PHYSICAL}P / ${HW_CPU_LOGICAL}L"
+    printf '│ %-18s │ %-30s │\n' "RAM" "${HW_RAM_GIB} GiB (${HW_RAM_FREE_GIB} GiB free)"
+    printf '│ %-18s │ %-30s │\n' "GPU" "${HW_GPU_MODEL:0:30}"
+    printf '│ %-18s │ %-30s │\n' "VRAM" "${HW_GPU_VRAM_GIB} GiB (${HW_GPU_VRAM_FREE_GIB} GiB free)"
+    printf '│ %-18s │ %-30s │\n' "Backend" "${HW_BACKEND}"
+    printf '│ %-18s │ %-30s │\n' "llama-bench" "$(basename "${LLAMA_BENCH_BIN}")"
+    printf '│ %-18s │ %-30s │\n' "TurboQuant" "${TURBO_AVAILABLE}"
+    printf '└────────────────────┴────────────────────────────────┘\n'
+    printf '\n'
 }
 
 # -----------------------------------------------------------------------------
@@ -639,24 +682,31 @@ print_hardware_summary() {
 #   Exits with an error if MODEL_LIST is still empty after resolution.
 # -----------------------------------------------------------------------------
 resolve_model_list() {
-    # TODO: implement
-    #   if [[ ${#MODEL_LIST[@]} -gt 0 ]]; then
-    #       # --model already populated by parse_args; just validate
-    #       return 0
-    #   fi
-    #   if [[ -n "${OPT_MODEL_LIST_FILE}" ]]; then
-    #       while IFS= read -r line; do
-    #           [[ -z "${line}" || "${line}" == \#* ]] && continue
-    #           MODEL_LIST+=("${line}")
-    #       done < "${OPT_MODEL_LIST_FILE}"
-    #   elif [[ -n "${SWEEP_MODELS_DIR}" ]]; then
-    #       while IFS= read -r -d '' f; do
-    #           MODEL_LIST+=("$f")
-    #       done < <(find "${SWEEP_MODELS_DIR}" -maxdepth 1 -name "*.gguf" -print0 | sort -z)
-    #   fi
-    #   [[ ${#MODEL_LIST[@]} -eq 0 ]] && die "No models found. Use --model, --models-dir, or --model-list."
-    #   for m in "${MODEL_LIST[@]}"; do validate_model "$m"; done
-    log "resolve_model_list: not yet implemented"
+    # If --model already populated MODEL_LIST by parse_args, just validate
+    if [[ ${#MODEL_LIST[@]} -gt 0 ]]; then
+        local m
+        for m in "${MODEL_LIST[@]}"; do validate_model "$m"; done
+        return 0
+    fi
+    if [[ -n "${OPT_MODEL_LIST_FILE}" ]]; then
+        [[ -f "${OPT_MODEL_LIST_FILE}" ]] || die "Model list file not found: ${OPT_MODEL_LIST_FILE}"
+        while IFS= read -r line; do
+            [[ -z "${line}" || "${line}" == \#* ]] && continue
+            if [[ "${line}" != /* ]] && [[ -n "${SWEEP_MODELS_DIR:-}" ]]; then
+                line="${SWEEP_MODELS_DIR%/}/${line}"
+            fi
+            MODEL_LIST+=("${line}")
+        done < "${OPT_MODEL_LIST_FILE}"
+    elif [[ -n "${SWEEP_MODELS_DIR:-}" ]]; then
+        while IFS= read -r -d '' f; do
+            MODEL_LIST+=("$f")
+        done < <(find "${SWEEP_MODELS_DIR}" -maxdepth 1 -name "*.gguf" -print0 | sort -z)
+    fi
+    [[ ${#MODEL_LIST[@]} -eq 0 ]] && die "No models found. Use --model, --models-dir, or --model-list."
+    local m
+    for m in "${MODEL_LIST[@]}"; do validate_model "$m"; done
+    log "Models to sweep (${#MODEL_LIST[@]}):"
+    for m in "${MODEL_LIST[@]}"; do log "  ${m}"; done
 }
 
 # -----------------------------------------------------------------------------
@@ -669,11 +719,9 @@ resolve_model_list() {
 # -----------------------------------------------------------------------------
 validate_model() {
     local path="$1"
-    # TODO: implement
-    #   [[ -f "${path}" ]]    || die "Model not found: ${path}"
-    #   [[ -r "${path}" ]]    || die "Model not readable: ${path}"
-    #   [[ "${path,,}" == *.gguf ]] || die "Model does not appear to be a .gguf file: ${path}"
-    log "validate_model: not yet implemented (path=${path})"
+    [[ -f "${path}" ]]    || die "Model not found: ${path}"
+    [[ -r "${path}" ]]    || die "Model not readable: ${path}"
+    [[ "${path,,}" == *.gguf ]] || die "Model does not appear to be a .gguf file: ${path}"
 }
 
 # -----------------------------------------------------------------------------
@@ -686,18 +734,18 @@ validate_model() {
 #                         or --overwrite
 # -----------------------------------------------------------------------------
 setup_output_dir() {
-    # TODO: implement
-    #   OUTPUT_MODEL_DIR="${SWEEP_OUTPUT_DIR}/${MODEL_STEM}"
-    #   if [[ -d "${OUTPUT_MODEL_DIR}" ]]; then
-    #       if $OPT_OVERWRITE; then
-    #           rm -rf "${OUTPUT_MODEL_DIR}"
-    #       elif ! $OPT_RESUME; then
-    #           die "Output dir exists: ${OUTPUT_MODEL_DIR}. Use --resume or --overwrite."
-    #       fi
-    #   fi
-    #   mkdir -p "${OUTPUT_MODEL_DIR}"
-    #   log "Output directory: ${OUTPUT_MODEL_DIR}"
-    log "setup_output_dir: not yet implemented"
+    OUTPUT_MODEL_DIR="${SWEEP_OUTPUT_DIR}/${MODEL_STEM}"
+    if [[ -d "${OUTPUT_MODEL_DIR}" ]]; then
+        if $OPT_OVERWRITE; then
+            rm -rf "${OUTPUT_MODEL_DIR}"
+            log "Overwrite: removed existing output dir"
+        elif ! $OPT_RESUME; then
+            die "Output dir already exists: ${OUTPUT_MODEL_DIR}
+  Use --resume to continue an existing sweep, or --overwrite to start fresh."
+        fi
+    fi
+    mkdir -p "${OUTPUT_MODEL_DIR}/raw"
+    log "Output directory: ${OUTPUT_MODEL_DIR}"
 }
 
 # -----------------------------------------------------------------------------
@@ -708,13 +756,33 @@ setup_output_dir() {
 #   No-op when --resume is false or state.json is absent.
 # -----------------------------------------------------------------------------
 load_state() {
-    # TODO: implement
-    #   local state_file="${OUTPUT_MODEL_DIR}/state.json"
-    #   $OPT_RESUME || return 0
-    #   [[ -f "${state_file}" ]] || return 0
-    #   # Use jq to extract phases_complete[] into a bash array
-    #   # e.g. PHASES_COMPLETE=( $(jq -r ".phases_complete[]" "${state_file}") )
-    log "load_state: not yet implemented"
+    local state_file="${OUTPUT_MODEL_DIR}/state.json"
+    $OPT_RESUME || return 0
+    [[ -f "${state_file}" ]] || return 0
+
+    log "[STATE] Resuming from ${state_file}"
+
+    # Read phases_complete
+    PHASES_COMPLETE="$(jq -r '.phases_complete // [] | join(" ")' "${state_file}" 2>/dev/null || true)"
+    MAX_NGL="$(jq -r '.max_ngl // 99' "${state_file}" 2>/dev/null || echo 99)"
+    BEST_NGL="$(jq -r '.best.ngl // 99' "${state_file}" 2>/dev/null || echo 99)"
+    BEST_FA="$(jq -r '.best.fa // 0' "${state_file}" 2>/dev/null || echo 0)"
+    BEST_CTK="$(jq -r '.best.ctk // "f16"' "${state_file}" 2>/dev/null || echo f16)"
+    BEST_CTV="$(jq -r '.best.ctv // "f16"' "${state_file}" 2>/dev/null || echo f16)"
+    BEST_THREADS="$(jq -r '.best.threads // ""' "${state_file}" 2>/dev/null || true)"
+    BEST_NKVO="$(jq -r '.best.nkvo // 0' "${state_file}" 2>/dev/null || echo 0)"
+    BEST_B="$(jq -r '.best.b // 2048' "${state_file}" 2>/dev/null || echo 2048)"
+    BEST_UB="$(jq -r '.best.ub // 512' "${state_file}" 2>/dev/null || echo 512)"
+    BEST_CTX="$(jq -r '.best.ctx // 512' "${state_file}" 2>/dev/null || echo 512)"
+
+    WS_NGL="$(jq -r '.working_sets.ngl // [] | join(" ")' "${state_file}" 2>/dev/null || true)"
+    WS_FA_CTK="$(jq -r '.working_sets.fa_ctk_combos // [] | .[] | "\(.fa) \(.ctk) \(.ctv)"' "${state_file}" 2>/dev/null || true)"
+    WS_THREADS="$(jq -r '.working_sets.thread_values // [] | join(" ")' "${state_file}" 2>/dev/null || true)"
+    WS_NKVO="$(jq -r '.working_sets.nkvo_values // [] | join(" ")' "${state_file}" 2>/dev/null || true)"
+    WS_B_UB="$(jq -r '.working_sets.b_ub_combos // [] | .[] | "\(.b) \(.ub)"' "${state_file}" 2>/dev/null || true)"
+    WS_CTX="$(jq -r '.working_sets.ctx_values // [] | join(" ")' "${state_file}" 2>/dev/null || true)"
+
+    log "[STATE] Phases complete: ${PHASES_COMPLETE:-none}"
 }
 
 # -----------------------------------------------------------------------------
@@ -726,11 +794,73 @@ load_state() {
 # -----------------------------------------------------------------------------
 save_state() {
     local phase="${1:-}"
-    # TODO: implement
-    #   local state_file="${OUTPUT_MODEL_DIR}/state.json"
-    #   Use jq to read existing state (or start from {}), append phase to
-    #   .phases_complete, merge in current working_set variables, write back.
-    log "save_state: not yet implemented (phase=${phase})"
+    local state_file="${OUTPUT_MODEL_DIR}/state.json"
+
+    # Add phase to PHASES_COMPLETE
+    if [[ -n "${phase}" ]]; then
+        if [[ -z "${PHASES_COMPLETE}" ]]; then
+            PHASES_COMPLETE="${phase}"
+        elif ! echo " ${PHASES_COMPLETE} " | grep -q " ${phase} "; then
+            PHASES_COMPLETE="${PHASES_COMPLETE} ${phase}"
+        fi
+    fi
+
+    # Build phases array JSON
+    local phases_json
+    phases_json="$(echo "${PHASES_COMPLETE}" | tr ' ' '\n' | grep -v '^$' | jq -R . | jq -sc . || echo '[]')"
+
+    # Build working sets JSON
+    local ngl_json thread_json nkvo_json ctx_json fa_ctk_json b_ub_json
+    ngl_json="$(echo "${WS_NGL}" | tr ' ' '\n' | grep -v '^$' | jq -R 'tonumber' | jq -sc . || echo '[]')"
+    thread_json="$(echo "${WS_THREADS}" | tr ' ' '\n' | grep -v '^$' | jq -R 'tonumber' | jq -sc . || echo '[]')"
+    nkvo_json="$(echo "${WS_NKVO}" | tr ' ' '\n' | grep -v '^$' | jq -R 'tonumber' | jq -sc . || echo '[]')"
+    ctx_json="$(echo "${WS_CTX}" | tr ' ' '\n' | grep -v '^$' | jq -R 'tonumber' | jq -sc . || echo '[]')"
+    fa_ctk_json="$(echo "${WS_FA_CTK}" | grep -v '^$' | while read -r fa ctk ctv; do
+        jq -cn --argjson fa "${fa}" --arg ctk "${ctk}" --arg ctv "${ctv}" '{fa:$fa,ctk:$ctk,ctv:$ctv}'
+    done | jq -sc . || echo '[]')"
+    b_ub_json="$(echo "${WS_B_UB}" | grep -v '^$' | while read -r b ub; do
+        jq -cn --argjson b "${b}" --argjson ub "${ub}" '{b:$b,ub:$ub}'
+    done | jq -sc . || echo '[]')"
+
+    jq -n \
+        --arg model_path "${MODEL_PATH}" \
+        --arg model_stem "${MODEL_STEM}" \
+        --argjson max_ngl "${MAX_NGL}" \
+        --argjson phases "${phases_json}" \
+        --argjson ngl_ws "${ngl_json}" \
+        --argjson fa_ctk_ws "${fa_ctk_json}" \
+        --argjson thread_ws "${thread_json}" \
+        --argjson nkvo_ws "${nkvo_json}" \
+        --argjson b_ub_ws "${b_ub_json}" \
+        --argjson ctx_ws "${ctx_json}" \
+        --argjson best_ngl "${BEST_NGL}" \
+        --argjson best_fa "${BEST_FA}" \
+        --arg best_ctk "${BEST_CTK}" \
+        --arg best_ctv "${BEST_CTV}" \
+        --arg best_threads "${BEST_THREADS}" \
+        --argjson best_nkvo "${BEST_NKVO}" \
+        --argjson best_b "${BEST_B}" \
+        --argjson best_ub "${BEST_UB}" \
+        --argjson best_ctx "${BEST_CTX}" \
+        '{
+          model_path: $model_path,
+          model_stem: $model_stem,
+          max_ngl: $max_ngl,
+          phases_complete: $phases,
+          best: {
+            ngl: $best_ngl, fa: $best_fa, ctk: $best_ctk, ctv: $best_ctv,
+            threads: (if $best_threads == "" then null else ($best_threads|tonumber) end),
+            nkvo: $best_nkvo, b: $best_b, ub: $best_ub, ctx: $best_ctx
+          },
+          working_sets: {
+            ngl: $ngl_ws,
+            fa_ctk_combos: $fa_ctk_ws,
+            thread_values: $thread_ws,
+            nkvo_values: $nkvo_ws,
+            b_ub_combos: $b_ub_ws,
+            ctx_values: $ctx_ws
+          }
+        }' > "${state_file}"
 }
 
 # -----------------------------------------------------------------------------
@@ -741,37 +871,41 @@ save_state() {
 #   No-op when OPT_NO_THERMAL=true or when the temperature commands are empty.
 # -----------------------------------------------------------------------------
 wait_cool() {
-    # TODO: implement
-    #   $OPT_NO_THERMAL && return 0
-    #   local cpu_temp gpu_temp
-    #   while true; do
-    #       [[ -n "${HW_CPU_TEMP_CMD}" ]] && cpu_temp=$(eval "${HW_CPU_TEMP_CMD}") || cpu_temp=0
-    #       [[ -n "${HW_GPU_TEMP_CMD}" ]] && gpu_temp=$(eval "${HW_GPU_TEMP_CMD}") || gpu_temp=0
-    #       if [[ "${cpu_temp}" -lt "${SWEEP_CPU_TEMP_LIMIT}" && "${gpu_temp}" -lt "${SWEEP_GPU_TEMP_LIMIT}" ]]; then
-    #           break
-    #       fi
-    #       log "Thermal wait: CPU=${cpu_temp}°C GPU=${gpu_temp}°C — sleeping ${SWEEP_COOL_POLL_SEC}s"
-    #       sleep "${SWEEP_COOL_POLL_SEC}"
-    #   done
-    return 0
+    $OPT_NO_THERMAL && return 0
+    local cpu_temp gpu_temp
+    while true; do
+        if [[ -n "${HW_CPU_TEMP_CMD}" ]]; then
+            cpu_temp="$(eval "${HW_CPU_TEMP_CMD}" 2>/dev/null || echo 0)"
+            cpu_temp="${cpu_temp:-0}"
+        else
+            cpu_temp=0
+        fi
+        if [[ -n "${HW_GPU_TEMP_CMD}" ]]; then
+            gpu_temp="$(eval "${HW_GPU_TEMP_CMD}" 2>/dev/null || echo 0)"
+            gpu_temp="${gpu_temp:-0}"
+        else
+            gpu_temp=0
+        fi
+        # Ensure numeric
+        [[ "${cpu_temp}" =~ ^[0-9]+$ ]] || cpu_temp=0
+        [[ "${gpu_temp}" =~ ^[0-9]+$ ]] || gpu_temp=0
+        if [[ "${cpu_temp}" -lt "${SWEEP_CPU_TEMP_LIMIT}" && "${gpu_temp}" -lt "${SWEEP_GPU_TEMP_LIMIT}" ]]; then
+            break
+        fi
+        log "Thermal wait: CPU=${cpu_temp}°C GPU=${gpu_temp}°C — sleeping ${SWEEP_COOL_POLL_SEC}s"
+        sleep "${SWEEP_COOL_POLL_SEC}"
+    done
 }
 
 # -----------------------------------------------------------------------------
 # detect_oom LOG_FILE
-#   Scan LOG_FILE for common OOM / fatal-error strings:
-#     - "CUDA out of memory"
-#     - "out of memory"
-#     - "failed to allocate"
-#     - "ggml_cuda_pool_alloc"
-#     - "ggml_backend_alloc" failure patterns
+#   Scan LOG_FILE for common OOM / fatal-error strings.
 #   Returns 0 (true) if an OOM/error pattern is found, 1 otherwise.
 # -----------------------------------------------------------------------------
 detect_oom() {
     local log_file="${1:-}"
-    # TODO: implement
-    #   [[ -f "${log_file}" ]] || return 1
-    #   grep -qiE "(out of memory|failed to allocate|ggml_cuda_pool_alloc|CUDA error|cudaMalloc failed)" "${log_file}"
-    return 1
+    [[ -f "${log_file}" ]] || return 1
+    grep -qiE "(out of memory|failed to allocate|ggml_cuda_pool_alloc|CUDA error|cudaMalloc failed|ggml_backend_alloc|Cannot allocate memory|Killed|Segmentation fault|bus error|terminate called|GGML_ASSERT)" "${log_file}"
 }
 
 # -----------------------------------------------------------------------------
@@ -784,68 +918,288 @@ detect_oom() {
 # -----------------------------------------------------------------------------
 select_binary() {
     local ctk="${1:-f16}"
-    # TODO: implement
-    #   if [[ "${ctk}" == turbo* ]]; then
-    #       $TURBO_AVAILABLE || die "turbo KV type requested but turbo-bench not available"
-    #       echo "${SWEEP_TURBO_BENCH_BIN}"
-    #   else
-    #       echo "${LLAMA_BENCH_BIN}"
-    #   fi
-    echo "${LLAMA_BENCH_BIN}"
+    if [[ "${ctk}" == turbo* ]]; then
+        $TURBO_AVAILABLE || die "turbo KV type requested but turbo-bench not available"
+        echo "${SWEEP_TURBO_BENCH_BIN}"
+    else
+        echo "${LLAMA_BENCH_BIN}"
+    fi
 }
 
 # -----------------------------------------------------------------------------
 # write_jsonl_record KEY=VALUE...
 #   Append a single JSON object to ${OUTPUT_MODEL_DIR}/sweep.jsonl.
-#   Accepts key=value pairs as positional arguments and uses jq --arg to build
-#   the object safely (no manual JSON escaping required).
-#   Always adds a "timestamp" field (UTC ISO-8601) automatically.
-#   Example call:
-#     write_jsonl_record model="${MODEL_STEM}" phase=1 ngl=32 tg_ts=14.7
 # -----------------------------------------------------------------------------
 write_jsonl_record() {
-    # TODO: implement
-    #   local jsonl_file="${OUTPUT_MODEL_DIR}/sweep.jsonl"
-    #   local jq_args=() jq_filter="{timestamp: \$ts"
-    #   jq_args+=(--arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
-    #   for kv in "$@"; do
-    #       local k="${kv%%=*}" v="${kv#*=}"
-    #       jq_args+=(--arg "${k}" "${v}")
-    #       jq_filter+=", ${k}: \$${k}"
-    #   done
-    #   jq_filter+="}"
-    #   jq -n "${jq_args[@]}" "${jq_filter}" >> "${jsonl_file}"
-    log "write_jsonl_record: not yet implemented (args=$*)"
+    # Usage: write_jsonl_record key=value ...
+    # Keys: run_id ts status viable phase phase_label binary
+    #       ngl fa ctk ctv nkvo threads threads_is_default b ub n_prompt n_gen reps
+    #       pp_ts pp_stddev tg_ts tg_stddev raw_output_file error_snippet
+    local run_id="" ts="" status="ok" viable="" phase=0 phase_label="" binary="standard"
+    local ngl="${BEST_NGL}" fa="${BEST_FA}" ctk="${BEST_CTK}" ctv="${BEST_CTV}"
+    local nkvo="${BEST_NKVO}" threads="" threads_is_default="true"
+    local b="${BEST_B}" ub="${BEST_UB}" n_prompt=512 n_gen=128 reps="${SWEEP_REPETITIONS}"
+    local pp_ts="0" pp_stddev="0" tg_ts="0" tg_stddev="0"
+    local raw_output_file="" error_snippet=""
+
+    for kv in "$@"; do
+        local k="${kv%%=*}" v="${kv#*=}"
+        case "${k}" in
+            run_id)             run_id="${v}" ;;
+            ts)                 ts="${v}" ;;
+            status)             status="${v}" ;;
+            viable)             viable="${v}" ;;
+            phase)              phase="${v}" ;;
+            phase_label)        phase_label="${v}" ;;
+            binary)             binary="${v}" ;;
+            ngl)                ngl="${v}" ;;
+            fa)                 fa="${v}" ;;
+            ctk)                ctk="${v}" ;;
+            ctv)                ctv="${v}" ;;
+            nkvo)               nkvo="${v}" ;;
+            threads)            threads="${v}" ;;
+            threads_is_default) threads_is_default="${v}" ;;
+            b)                  b="${v}" ;;
+            ub)                 ub="${v}" ;;
+            n_prompt)           n_prompt="${v}" ;;
+            n_gen)              n_gen="${v}" ;;
+            reps)               reps="${v}" ;;
+            pp_ts)              pp_ts="${v}" ;;
+            pp_stddev)          pp_stddev="${v}" ;;
+            tg_ts)              tg_ts="${v}" ;;
+            tg_stddev)          tg_stddev="${v}" ;;
+            raw_output_file)    raw_output_file="${v}" ;;
+            error_snippet)      error_snippet="${v}" ;;
+        esac
+    done
+
+    [[ -z "${ts}" ]] && ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if [[ -n "${threads}" ]]; then threads_is_default="false"; else threads_is_default="true"; fi
+
+    # viable JSON value
+    local viable_json
+    case "${viable}" in
+        true|false) viable_json="${viable}" ;;
+        *)          viable_json="null" ;;
+    esac
+
+    # threads JSON value
+    local threads_json
+    if [[ -z "${threads}" ]]; then threads_json="null"; else threads_json="${threads}"; fi
+
+    # results JSON array
+    local results_json="[]"
+    if [[ "${status}" == "ok" ]]; then
+        local arr=""
+        if [[ "${n_prompt}" -gt 0 && "${pp_ts}" != "0" ]]; then
+            arr+='{"test":"pp","n_prompt":'"${n_prompt}"',"n_gen":0,"avg_ts":'"${pp_ts}"',"stddev_ts":'"${pp_stddev}"'}'
+        fi
+        if [[ "${n_gen}" -gt 0 && "${tg_ts}" != "0" ]]; then
+            [[ -n "${arr}" ]] && arr+=","
+            arr+='{"test":"tg","n_prompt":0,"n_gen":'"${n_gen}"',"avg_ts":'"${tg_ts}"',"stddev_ts":'"${tg_stddev}"'}'
+        fi
+        [[ -n "${arr}" ]] && results_json="[${arr}]"
+    fi
+
+    jq -cn \
+        --arg run_id "${run_id}" \
+        --arg ts "${ts}" \
+        --arg model_path "${MODEL_PATH}" \
+        --arg model_stem "${MODEL_STEM}" \
+        --argjson phase "${phase}" \
+        --arg phase_label "${phase_label}" \
+        --arg binary "${binary}" \
+        --arg status "${status}" \
+        --argjson viable "${viable_json}" \
+        --argjson ngl "${ngl}" \
+        --argjson fa "${fa}" \
+        --arg ctk "${ctk}" \
+        --arg ctv "${ctv}" \
+        --argjson nkvo "${nkvo}" \
+        --argjson threads "${threads_json}" \
+        --argjson threads_is_default "${threads_is_default}" \
+        --argjson b "${b}" \
+        --argjson ub "${ub}" \
+        --argjson n_prompt "${n_prompt}" \
+        --argjson n_gen "${n_gen}" \
+        --argjson reps "${reps}" \
+        --argjson results "${results_json}" \
+        --arg raw_output_file "${raw_output_file}" \
+        --arg error_snippet "${error_snippet}" \
+        '{run_id:$run_id,timestamp:$ts,model_path:$model_path,model_stem:$model_stem,
+          phase:$phase,phase_label:$phase_label,binary:$binary,status:$status,viable:$viable,
+          params:{ngl:$ngl,fa:$fa,ctk:$ctk,ctv:$ctv,nkvo:$nkvo,threads:$threads,
+                  threads_is_default:$threads_is_default,b:$b,ub:$ub,
+                  n_prompt:$n_prompt,n_gen:$n_gen,repetitions:$reps},
+          results:$results,
+          raw_output_file:(if $raw_output_file=="" then null else $raw_output_file end),
+          error_snippet:(if $error_snippet=="" then null else $error_snippet end)
+        }' >> "${OUTPUT_MODEL_DIR}/sweep.jsonl"
 }
 
 # -----------------------------------------------------------------------------
 # run_bench LABEL KEY=VALUE...
 #   The central bench execution wrapper.
-#   LABEL is a short human-readable string for log messages (e.g. "ngl=32").
-#   Remaining KEY=VALUE pairs are llama-bench CLI flags
-#     (e.g. ngl=32 fa=1 ctk=q8_0 t=8).
-#
-#   Execution steps:
-#     1. Resolve binary via select_binary (reads ctk= from args if present)
-#     2. Call wait_cool()
-#     3. Sleep SWEEP_DELAY_SEC
-#     4. Construct llama-bench command with --model, all key=value args,
-#        -r SWEEP_REPETITIONS, -o json, and ionice/nice wrapping
-#     5. If OPT_DRY_RUN: print command and return "dry-run"
-#     6. Execute under timeout SWEEP_TIMEOUT_SEC, capture stdout + stderr to
-#        per-run log file in OUTPUT_MODEL_DIR/runs/
-#     7. Call detect_oom on the run log; if OOM: log warn, return "oom"
-#     8. Parse tg (token-gen) t/s from JSON output via jq
-#     9. If tg t/s < SWEEP_MIN_TG_TS: log warn, return "too-slow"
-#    10. Call write_jsonl_record with all params + tg_ts result
-#    11. Return "ok"
 # -----------------------------------------------------------------------------
 run_bench() {
     local label="${1:-unknown}"
     shift
-    # TODO: implement full orchestration described above
-    log "run_bench: not yet implemented (label=${label}, args=$*)"
-    echo "not-implemented"
+
+    # Defaults from current best config
+    local ngl="${BEST_NGL}" fa="${BEST_FA}" ctk="${BEST_CTK}" ctv="${BEST_CTV}"
+    local nkvo="${BEST_NKVO}" threads="" b="${BEST_B}" ub="${BEST_UB}"
+    local n_prompt=512 n_gen=128 reps="${SWEEP_REPETITIONS}"
+    local phase=0 phase_label="unknown"
+
+    for kv in "$@"; do
+        local k="${kv%%=*}" v="${kv#*=}"
+        case "${k}" in
+            ngl)          ngl="${v}" ;;
+            fa)           fa="${v}" ;;
+            ctk)          ctk="${v}" ;;
+            ctv)          ctv="${v}" ;;
+            nkvo)         nkvo="${v}" ;;
+            threads)      threads="${v}" ;;
+            b)            b="${v}" ;;
+            ub)           ub="${v}" ;;
+            n_prompt)     n_prompt="${v}" ;;
+            n_gen)        n_gen="${v}" ;;
+            reps)         reps="${v}" ;;
+            phase)        phase="${v}" ;;
+            phase_label)  phase_label="${v}" ;;
+        esac
+    done
+
+    local binary
+    binary="$(select_binary "${ctk}")"
+    local binary_label="standard"
+    [[ "${binary}" == "${SWEEP_TURBO_BENCH_BIN}" ]] && binary_label="turboquant"
+
+    local run_id
+    run_id="$(gen_run_id)"
+
+    local raw_dir="${OUTPUT_MODEL_DIR}/raw"
+    local raw_file="${raw_dir}/${run_id}.txt"
+    local stderr_file="${raw_dir}/${run_id}.err"
+
+    # Build command array
+    local cmd=( "${binary}" -m "${MODEL_PATH}" )
+    cmd+=( -ngl "${ngl}" )
+    cmd+=( -fa "${fa}" )
+    cmd+=( -ctk "${ctk}" -ctv "${ctv}" )
+    cmd+=( -nkvo "${nkvo}" )
+    [[ -n "${threads}" ]] && cmd+=( -t "${threads}" )
+    cmd+=( -b "${b}" -ub "${ub}" )
+    cmd+=( -p "${n_prompt}" -n "${n_gen}" )
+    cmd+=( -r "${reps}" )
+    cmd+=( -o jsonl )
+    cmd+=( --prio "${SWEEP_PRIO}" )
+
+    local threads_display="${threads:-sys}"
+    log "[run] ${label} | ngl=${ngl} fa=${fa} ctk=${ctk} nkvo=${nkvo} t=${threads_display} b=${b} ub=${ub} ctx=${n_prompt} gen=${n_gen}"
+
+    if $OPT_DRY_RUN; then
+        log "[dry-run] ${cmd[*]}"
+        echo "dry-run"
+        return 0
+    fi
+
+    wait_cool
+    sleep "${SWEEP_DELAY_SEC}"
+
+    local exit_code=0
+    timeout "${SWEEP_TIMEOUT_SEC}" "${cmd[@]}" > "${raw_file}" 2>"${stderr_file}" || exit_code=$?
+
+    # Timeout
+    if [[ ${exit_code} -eq 124 ]]; then
+        log "[TIMEOUT] ${label} — killed after ${SWEEP_TIMEOUT_SEC}s"
+        write_jsonl_record \
+            run_id="${run_id}" phase="${phase}" phase_label="${phase_label}" \
+            binary="${binary_label}" status="timeout" viable="false" \
+            ngl="${ngl}" fa="${fa}" ctk="${ctk}" ctv="${ctv}" nkvo="${nkvo}" \
+            threads="${threads}" b="${b}" ub="${ub}" \
+            n_prompt="${n_prompt}" n_gen="${n_gen}" reps="${reps}" \
+            error_snippet="$(head -c 400 "${stderr_file}" 2>/dev/null || true)"
+        echo "timeout"
+        return 0
+    fi
+
+    # OOM detection — check both stdout (some errors go there) and stderr
+    local combined="${raw_dir}/${run_id}.combined"
+    cat "${raw_file}" "${stderr_file}" > "${combined}" 2>/dev/null || true
+
+    if detect_oom "${combined}"; then
+        local err_snip
+        err_snip="$(grep -iEm1 '(out of memory|CUDA error|failed to allocate|Killed)' "${combined}" 2>/dev/null | head -c 400 || true)"
+        log "[OOM] ${label}"
+        write_jsonl_record \
+            run_id="${run_id}" phase="${phase}" phase_label="${phase_label}" \
+            binary="${binary_label}" status="oom" viable="false" \
+            ngl="${ngl}" fa="${fa}" ctk="${ctk}" ctv="${ctv}" nkvo="${nkvo}" \
+            threads="${threads}" b="${b}" ub="${ub}" \
+            n_prompt="${n_prompt}" n_gen="${n_gen}" reps="${reps}" \
+            error_snippet="${err_snip}"
+        rm -f "${combined}"
+        echo "oom"
+        return 0
+    fi
+    rm -f "${combined}"
+
+    # Parse JSON output from llama-bench -o jsonl
+    local pp_ts pp_stddev tg_ts tg_stddev
+    pp_ts="$(jq -r 'select(.n_gen==0 and .n_prompt>0) | .avg_ts' "${raw_file}" 2>/dev/null | tail -1)"
+    pp_stddev="$(jq -r 'select(.n_gen==0 and .n_prompt>0) | .stddev_ts' "${raw_file}" 2>/dev/null | tail -1)"
+    tg_ts="$(jq -r 'select(.n_gen>0) | .avg_ts' "${raw_file}" 2>/dev/null | tail -1)"
+    tg_stddev="$(jq -r 'select(.n_gen>0) | .stddev_ts' "${raw_file}" 2>/dev/null | tail -1)"
+
+    # Default nulls to 0
+    pp_ts="${pp_ts:-0}"; pp_ts="${pp_ts/null/0}"
+    pp_stddev="${pp_stddev:-0}"; pp_stddev="${pp_stddev/null/0}"
+    tg_ts="${tg_ts:-0}"; tg_ts="${tg_ts/null/0}"
+    tg_stddev="${tg_stddev:-0}"; tg_stddev="${tg_stddev/null/0}"
+
+    # Check we got some output
+    if [[ "${pp_ts}" == "0" && "${tg_ts}" == "0" && ${exit_code} -ne 0 ]]; then
+        local err_snip
+        err_snip="$(head -c 400 "${stderr_file}" 2>/dev/null || true)"
+        log "[ERROR] ${label} — exit ${exit_code}, no results parsed"
+        write_jsonl_record \
+            run_id="${run_id}" phase="${phase}" phase_label="${phase_label}" \
+            binary="${binary_label}" status="error" viable="false" \
+            ngl="${ngl}" fa="${fa}" ctk="${ctk}" ctv="${ctv}" nkvo="${nkvo}" \
+            threads="${threads}" b="${b}" ub="${ub}" \
+            n_prompt="${n_prompt}" n_gen="${n_gen}" reps="${reps}" \
+            error_snippet="${err_snip}"
+        echo "error"
+        return 0
+    fi
+
+    # Viability check
+    local viable="null"
+    if [[ "${n_gen}" -gt 0 ]]; then
+        if awk "BEGIN{exit !(${tg_ts}+0 >= ${SWEEP_MIN_TG_TS}+0)}"; then
+            viable="true"
+        else
+            viable="false"
+        fi
+    fi
+
+    local tg_display="${tg_ts}"
+    [[ "${n_gen}" -eq 0 ]] && tg_display="n/a"
+    log "[ok] ${label} | PP=${pp_ts} t/s  TG=${tg_display} t/s"
+
+    write_jsonl_record \
+        run_id="${run_id}" phase="${phase}" phase_label="${phase_label}" \
+        binary="${binary_label}" status="ok" viable="${viable}" \
+        ngl="${ngl}" fa="${fa}" ctk="${ctk}" ctv="${ctv}" nkvo="${nkvo}" \
+        threads="${threads}" b="${b}" ub="${ub}" \
+        n_prompt="${n_prompt}" n_gen="${n_gen}" reps="${reps}" \
+        pp_ts="${pp_ts}" pp_stddev="${pp_stddev}" \
+        tg_ts="${tg_ts}" tg_stddev="${tg_stddev}" \
+        raw_output_file="raw/${run_id}.txt"
+
+    echo "ok"
+    return 0
 }
 
 # apply_axis_opts LIST_VALUES START_VALUE DIRECTION
@@ -940,7 +1294,7 @@ apply_phase7_mins() {
             [[ "${ctk_order[$i]}" == "${min_val}" ]] && { min_idx=$i; break; }
         done
         if [[ $min_idx -eq -1 ]]; then
-            warn "Unknown --min-ctk value '${min_val}' â no filtering applied"
+            warn "Unknown --min-ctk value '${min_val}' — no filtering applied"
             echo "${values}"; return 0
         fi
         local val
@@ -963,220 +1317,607 @@ apply_phase7_mins() {
 
 # -----------------------------------------------------------------------------
 # phase0_ngl_probe
-#   Algorithm: binary-search the maximum NGL that fits without OOM.
-#     lo=0, hi=99 (or layer count reported by model metadata if available)
-#     mid = (lo+hi)/2
-#     run_bench with SWEEP_PROBE_REPS at mid
-#     OOM -> hi = mid-1
-#     OK  -> lo = mid+1, record candidate
-#     Continue until lo > hi; MAX_NGL = last OK candidate
-#   Uses a single pp/tg token pair (pp=1, tg=1) for speed.
-#   Sets MAX_NGL global for all subsequent phases.
+#   Linear step-down from 99, finding the highest NGL that loads without OOM.
+#   Sets MAX_NGL and BEST_NGL globals.
 #   Skipped entirely when HW_GPU_COUNT=0 (CPU-only inference).
 # -----------------------------------------------------------------------------
 phase0_ngl_probe() {
-    log "[Phase 0] NGL probe — binary-search max stable NGL"
-    # TODO: implement binary search described above
+    log "[Phase 0] NGL probe — finding max stable NGL"
+    if [[ "${HW_GPU_COUNT}" -eq 0 ]]; then
+        log "[Phase 0] No GPU detected — skipping probe, setting MAX_NGL=0"
+        MAX_NGL=0
+        BEST_NGL=0
+        return 0
+    fi
+
+    local ngl=99
+    while [[ ${ngl} -ge 0 ]]; do
+        log "[Phase 0] Probing ngl=${ngl}"
+        local status
+        status="$(run_bench "phase0/ngl=${ngl}" \
+            ngl="${ngl}" fa=0 ctk=f16 ctv=f16 nkvo=0 \
+            n_prompt=64 n_gen=0 reps="${SWEEP_PROBE_REPS}" \
+            phase=0 phase_label="ngl_probe")"
+        if [[ "${status}" == "ok" || "${status}" == "dry-run" ]]; then
+            MAX_NGL="${ngl}"
+            BEST_NGL="${ngl}"
+            log "[Phase 0] max_ngl=${ngl}"
+            return 0
+        fi
+        ngl=$(( ngl - 4 ))
+    done
+
+    die "Model cannot be loaded at any ngl value on this hardware."
 }
 
 # -----------------------------------------------------------------------------
 # phase1_ngl_sweep
-#   Algorithm: iterate NGL from 0 to MAX_NGL in steps of SWEEP_NGL_STEP,
-#   always including 0 and MAX_NGL as explicit endpoints.
-#   Run run_bench at each step with SWEEP_REPETITIONS.
-#   Record tg t/s at each point; the NGL with the highest tg t/s becomes
-#   the working BEST_NGL for subsequent phases.
-#   Also records pp (prompt-processing) t/s for each point.
+#   Sweep NGL from 0 to MAX_NGL in steps of SWEEP_NGL_STEP.
+#   Best TG t/s config becomes BEST_NGL for subsequent phases.
 # -----------------------------------------------------------------------------
 phase1_ngl_sweep() {
-    log "[Phase 1] NGL sweep (0.. step ${SWEEP_NGL_STEP})"
-    # Apply: ngl_list=$(apply_axis_opts "${full_ngl_list}" "${OPT_START_NGL}" "${OPT_DIR_NGL}")
-    # TODO: implement iterative sweep described above
+    log "[Phase 1] NGL axis sweep (step=${SWEEP_NGL_STEP})"
+
+    # Build full NGL list: 0, step, 2*step, ..., MAX_NGL (deduplicated, sorted)
+    local -a full_list=()
+    full_list+=(0)
+    local n
+    for (( n=SWEEP_NGL_STEP; n<MAX_NGL; n+=SWEEP_NGL_STEP )); do
+        full_list+=("${n}")
+    done
+    full_list+=("${MAX_NGL}")
+    # Deduplicate
+    local -A seen=()
+    local -a deduped=()
+    local v
+    for v in "${full_list[@]}"; do
+        [[ -z "${seen[$v]+x}" ]] && { deduped+=("${v}"); seen[$v]=1; }
+    done
+
+    # Apply start/direction
+    local ngl_list
+    ngl_list="$(apply_axis_opts "${deduped[*]}" "${OPT_START_NGL}" "${OPT_DIR_NGL}")"
+
+    local best_tg=-1
+    WS_NGL=""
+
+    while IFS= read -r ngl; do
+        [[ -z "${ngl}" ]] && continue
+        local status
+        status="$(run_bench "phase1/ngl=${ngl}" \
+            ngl="${ngl}" fa=0 ctk=f16 ctv=f16 nkvo=0 \
+            n_prompt=512 n_gen=128 reps="${SWEEP_REPETITIONS}" \
+            phase=1 phase_label="ngl_sweep")"
+        if [[ "${status}" == "ok" ]]; then
+            WS_NGL="${WS_NGL:+${WS_NGL} }${ngl}"
+            # Track best TG
+            local tg
+            tg="$(jq -s --argjson ph 1 '[.[] | select(.phase==$ph and .params.ngl=='"${ngl}"' and .status=="ok")] | sort_by(-.results[]?.avg_ts) | .[0].results[]? | select(.test=="tg") | .avg_ts' "${OUTPUT_MODEL_DIR}/sweep.jsonl" 2>/dev/null | tail -1 || echo 0)"
+            tg="${tg:-0}"; tg="${tg/null/0}"
+            if awk "BEGIN{exit !(${tg}+0 > ${best_tg}+0)}"; then
+                best_tg="${tg}"
+                BEST_NGL="${ngl}"
+            fi
+        fi
+    done <<< "${ngl_list}"
+
+    # Ensure MAX_NGL is in working set if it produced ok
+    [[ -z "${WS_NGL}" ]] && WS_NGL="${MAX_NGL}"
+    log "[Phase 1] Best NGL: ${BEST_NGL} (TG=${best_tg} t/s)  Working set: ${WS_NGL}"
 }
 
 # -----------------------------------------------------------------------------
 # phase2_fa_kv_sweep
-#   Test all flash-attn × KV-type combinations at BEST_NGL.
-#   Standard combos (always tested):
-#     fa=0  ctk=f16   ctv=f16
-#     fa=0  ctk=q8_0  ctv=q8_0
-#     fa=0  ctk=q4_0  ctv=f16
-#     fa=1  ctk=f16   ctv=f16
-#     fa=1  ctk=q8_0  ctv=q8_0
-#     fa=1  ctk=q5_1  ctv=q5_1
-#     fa=1  ctk=q4_0  ctv=f16
-#   Turbo combos (only when TURBO_AVAILABLE=true):
-#     fa=1  ctk=turbo3  ctv=turbo3
-#     fa=1  ctk=turbo4  ctv=turbo4
-#   Best combo (highest tg t/s) stored in BEST_FA / BEST_CTK / BEST_CTV.
+#   Test flash-attention × KV-quant combinations at BEST_NGL.
+#   Best TG t/s combo becomes BEST_FA / BEST_CTK / BEST_CTV.
 # -----------------------------------------------------------------------------
 phase2_fa_kv_sweep() {
-    log "[Phase 2] Flash-attn × KV-type sweep"
-    # Apply: ctk_list=$(apply_axis_opts "${full_ctk_list}" "${OPT_START_CTK}" "${OPT_DIR_CTK}")
-    # Apply FA direction:
-    # fa_list=$(apply_axis_opts "0 1" "${OPT_START_FA}" "${OPT_DIR_FA}")
-    # Then iterate fa_list x ctk_list, skipping invalid combos (fa=0 + q4_0, fa=0 + turbo*)
-    # TODO: implement combo iteration described above
-    #
-    # Standard combos array (fa ctk ctv):
-    #   ("0 f16 f16" "0 q8_0 q8_0" "0 q4_0 f16"
-    #    "1 f16 f16" "1 q8_0 q8_0" "1 q5_1 q5_1" "1 q4_0 f16")
-    # Turbo combos (appended when TURBO_AVAILABLE):
-    #   ("1 turbo3 turbo3" "1 turbo4 turbo4")
+    log "[Phase 2] Flash attention × KV quant sweep"
+
+    # Standard combos: "fa ctk ctv"
+    local -a combos=(
+        "0 f16 f16"
+        "1 f16 f16"
+        "0 q8_0 q8_0"
+        "1 q8_0 q8_0"
+        "1 q4_0 q4_0"
+    )
+    # Turbo combos
+    if $TURBO_AVAILABLE; then
+        combos+=(
+            "0 turbo4 turbo4"
+            "1 turbo4 turbo4"
+            "0 turbo3 turbo3"
+            "1 turbo3 turbo3"
+            "0 turbo2 turbo2"
+            "1 turbo2 turbo2"
+        )
+    fi
+
+    # Apply FA direction filter
+    local fa_start="${OPT_START_FA}"
+    local fa_dir="${OPT_DIR_FA}"
+    local fa_order
+    fa_order="$(apply_axis_opts "0 1" "${fa_start}" "${fa_dir}")"
+
+    # Apply CTK direction filter
+    local ctk_full_order="f16 q8_0 q4_0 turbo4 turbo3 turbo2"
+    local ctk_filtered
+    ctk_filtered="$(apply_axis_opts "${ctk_full_order}" "${OPT_START_CTK}" "${OPT_DIR_CTK}")"
+
+    local best_tg=-1
+    WS_FA_CTK=""
+
+    local combo
+    for combo in "${combos[@]}"; do
+        local fa ctk ctv
+        read -r fa ctk ctv <<< "${combo}"
+
+        # Filter by FA direction
+        echo "${fa_order}" | grep -qw "${fa}" || continue
+        # Filter by CTK direction
+        echo "${ctk_filtered}" | grep -qw "${ctk}" || continue
+        # Skip fa=0 + q4_0 (invalid combo)
+        [[ "${fa}" == "0" && "${ctk}" == "q4_0" ]] && continue
+
+        local status
+        status="$(run_bench "phase2/fa=${fa}_ctk=${ctk}" \
+            ngl="${BEST_NGL}" fa="${fa}" ctk="${ctk}" ctv="${ctv}" nkvo=0 \
+            n_prompt=512 n_gen=128 reps="${SWEEP_REPETITIONS}" \
+            phase=2 phase_label="fa_kv_sweep")"
+
+        if [[ "${status}" == "ok" ]]; then
+            WS_FA_CTK="${WS_FA_CTK:+${WS_FA_CTK}
+}${fa} ${ctk} ${ctv}"
+            local tg
+            tg="$(jq -rs --argjson ph 2 --argjson fa "${fa}" --arg ctk "${ctk}" \
+                '[.[] | select(.phase==$ph and .params.fa==$fa and .params.ctk==$ctk and .status=="ok")] | .[0].results[]? | select(.test=="tg") | .avg_ts' \
+                "${OUTPUT_MODEL_DIR}/sweep.jsonl" 2>/dev/null | tail -1 || echo 0)"
+            tg="${tg:-0}"; tg="${tg/null/0}"
+            if awk "BEGIN{exit !(${tg}+0 > ${best_tg}+0)}"; then
+                best_tg="${tg}"
+                BEST_FA="${fa}"
+                BEST_CTK="${ctk}"
+                BEST_CTV="${ctv}"
+            fi
+        fi
+    done
+
+    [[ -z "${WS_FA_CTK}" ]] && WS_FA_CTK="0 f16 f16"
+    log "[Phase 2] Best: fa=${BEST_FA} ctk=${BEST_CTK} (TG=${best_tg} t/s)"
 }
 
 # -----------------------------------------------------------------------------
 # phase3_thread_sweep
-#   Sweep CPU thread count at NGL=0 (pure-CPU path) to find the optimal
-#   thread count for CPU-side work (used in mixed GPU+CPU offload).
-#   Thread values tested are derived from hardware:
-#     1, HW_CPU_PHYSICAL/2, HW_CPU_PHYSICAL, HW_CPU_LOGICAL
-#   Plus any values in between that are round numbers (e.g. 4, 6, 8, 12, 16).
-#   Best thread count stored in BEST_THREADS.
+#   Sweep CPU thread counts at BEST_NGL/FA/CTK to find optimal thread count.
+#   Best TG t/s config becomes BEST_THREADS.
 # -----------------------------------------------------------------------------
 phase3_thread_sweep() {
-    log "[Phase 3] CPU thread sweep"
-    # Apply: thread_list=$(apply_axis_opts "${full_thread_list}" "${OPT_START_THREADS}" "${OPT_DIR_THREADS}")
-    # TODO: implement
-    # Thread candidates derived from HW_CPU_PHYSICAL and HW_CPU_LOGICAL:
-    #   e.g. for 8P/16L: 1 2 4 6 8 12 16
-    # Run each at NGL=0 with BEST_FA/BEST_CTK/BEST_CTV
+    log "[Phase 3] CPU thread count sweep"
+
+    # Build thread list from hardware
+    local -a thread_candidates=(1)
+    local half=$(( HW_CPU_PHYSICAL / 2 ))
+    [[ ${half} -gt 1 ]] && thread_candidates+=("${half}")
+    thread_candidates+=("${HW_CPU_PHYSICAL}")
+    local three_qtr=$(( (HW_CPU_PHYSICAL + HW_CPU_LOGICAL) / 2 ))
+    [[ ${three_qtr} -gt ${HW_CPU_PHYSICAL} && ${three_qtr} -lt ${HW_CPU_LOGICAL} ]] && thread_candidates+=("${three_qtr}")
+    [[ ${HW_CPU_LOGICAL} -gt ${HW_CPU_PHYSICAL} ]] && thread_candidates+=("${HW_CPU_LOGICAL}")
+    # Deduplicate and sort
+    local -a full_thread_list=()
+    local t
+    for t in $(printf '%s\n' "${thread_candidates[@]}" | sort -n | uniq); do
+        full_thread_list+=("${t}")
+    done
+
+    local thread_list
+    thread_list="$(apply_axis_opts "${full_thread_list[*]}" "${OPT_START_THREADS}" "${OPT_DIR_THREADS}")"
+
+    local best_tg=-1
+    WS_THREADS=""
+
+    # System default run (no -t flag)
+    local status
+    status="$(run_bench "phase3/threads=system_default" \
+        ngl="${BEST_NGL}" fa="${BEST_FA}" ctk="${BEST_CTK}" ctv="${BEST_CTV}" nkvo=0 \
+        n_prompt=512 n_gen=128 reps="${SWEEP_REPETITIONS}" \
+        phase=3 phase_label="thread_sweep")"
+    if [[ "${status}" == "ok" ]]; then
+        WS_THREADS="system_default"
+    fi
+
+    while IFS= read -r t; do
+        [[ -z "${t}" ]] && continue
+        status="$(run_bench "phase3/threads=${t}" \
+            ngl="${BEST_NGL}" fa="${BEST_FA}" ctk="${BEST_CTK}" ctv="${BEST_CTV}" nkvo=0 \
+            threads="${t}" n_prompt=512 n_gen=128 reps="${SWEEP_REPETITIONS}" \
+            phase=3 phase_label="thread_sweep")"
+        if [[ "${status}" == "ok" ]]; then
+            WS_THREADS="${WS_THREADS:+${WS_THREADS} }${t}"
+            local tg
+            tg="$(jq -rs --argjson ph 3 --argjson t "${t}" \
+                '[.[] | select(.phase==$ph and .params.threads==$t and .status=="ok")] | .[0].results[]? | select(.test=="tg") | .avg_ts' \
+                "${OUTPUT_MODEL_DIR}/sweep.jsonl" 2>/dev/null | tail -1 || echo 0)"
+            tg="${tg:-0}"; tg="${tg/null/0}"
+            if awk "BEGIN{exit !(${tg}+0 > ${best_tg}+0)}"; then
+                best_tg="${tg}"
+                BEST_THREADS="${t}"
+            fi
+        fi
+    done <<< "${thread_list}"
+
+    [[ -z "${WS_THREADS}" ]] && WS_THREADS="system_default"
+    log "[Phase 3] Best threads: ${BEST_THREADS:-system_default} (TG=${best_tg} t/s)"
 }
 
 # -----------------------------------------------------------------------------
 # phase4_nkvo_sweep
-#   Test the --no-kv-offload flag against the best configuration found so far
-#   (BEST_NGL, BEST_FA, BEST_CTK, BEST_CTV, BEST_THREADS).
-#   Combos:
-#     nkvo=0  (default, KV offloaded to GPU)
-#     nkvo=1  (KV stays in CPU RAM — may free VRAM for larger context later)
-#   Records which is faster; stores result in BEST_NKVO.
+#   Test nkvo=0 vs nkvo=1 at best config; also probe higher NGL with nkvo=1.
+#   Best config becomes BEST_NKVO.
 # -----------------------------------------------------------------------------
 phase4_nkvo_sweep() {
-    log "[Phase 4] No-KV-offload sweep"
-    # TODO: implement nkvo=0 vs nkvo=1 comparison
+    log "[Phase 4] KV offload sweep (nkvo)"
+    local best_tg=-1
+    WS_NKVO=""
+
+    local nkvo
+    for nkvo in 0 1; do
+        local status
+        status="$(run_bench "phase4/nkvo=${nkvo}" \
+            ngl="${BEST_NGL}" fa="${BEST_FA}" ctk="${BEST_CTK}" ctv="${BEST_CTV}" \
+            threads="${BEST_THREADS}" nkvo="${nkvo}" \
+            n_prompt=512 n_gen=128 reps="${SWEEP_REPETITIONS}" \
+            phase=4 phase_label="nkvo_sweep")"
+        if [[ "${status}" == "ok" ]]; then
+            WS_NKVO="${WS_NKVO:+${WS_NKVO} }${nkvo}"
+            local tg
+            tg="$(jq -rs --argjson ph 4 --argjson nkvo "${nkvo}" \
+                '[.[] | select(.phase==$ph and .params.nkvo==$nkvo and .status=="ok")] | .[0].results[]? | select(.test=="tg") | .avg_ts' \
+                "${OUTPUT_MODEL_DIR}/sweep.jsonl" 2>/dev/null | tail -1 || echo 0)"
+            tg="${tg:-0}"; tg="${tg/null/0}"
+            if awk "BEGIN{exit !(${tg}+0 > ${best_tg}+0)}"; then
+                best_tg="${tg}"
+                BEST_NKVO="${nkvo}"
+            fi
+        fi
+    done
+
+    # Also test nkvo=1 at higher NGL values (may unlock more layers)
+    if [[ ${MAX_NGL} -lt 99 ]]; then
+        local extra_ngl
+        for extra_ngl in $(( MAX_NGL + 4 )) $(( MAX_NGL + 8 )) $(( MAX_NGL + 12 )); do
+            [[ ${extra_ngl} -gt 99 ]] && break
+            local s
+            s="$(run_bench "phase4/nkvo=1_ngl=${extra_ngl}" \
+                ngl="${extra_ngl}" fa="${BEST_FA}" ctk="${BEST_CTK}" ctv="${BEST_CTV}" \
+                threads="${BEST_THREADS}" nkvo=1 \
+                n_prompt=512 n_gen=128 reps="${SWEEP_REPETITIONS}" \
+                phase=4 phase_label="nkvo_sweep")"
+            [[ "${s}" == "oom" || "${s}" == "error" || "${s}" == "timeout" ]] && break
+        done
+    fi
+
+    [[ -z "${WS_NKVO}" ]] && WS_NKVO="0"
+    log "[Phase 4] Best nkvo: ${BEST_NKVO} (TG=${best_tg} t/s)"
 }
 
 # -----------------------------------------------------------------------------
 # phase5_batch_sweep
-#   Test batch (b) and micro-batch (ub) size pairs.
-#   Pairs to test:
-#     b=512   ub=512
-#     b=1024  ub=512
-#     b=1024  ub=1024
-#     b=2048  ub=512
-#     b=2048  ub=1024
-#     b=2048  ub=2048
-#     b=4096  ub=512
-#     b=4096  ub=1024
-#     b=4096  ub=2048
-#   Run at full best config. Best pair (highest pp t/s) stored in
-#   BEST_BATCH / BEST_UBATCH.
+#   Test batch (b) and micro-batch (ub) size pairs at best config.
+#   Best PP t/s pair becomes BEST_B / BEST_UB.
 # -----------------------------------------------------------------------------
 phase5_batch_sweep() {
     log "[Phase 5] Batch / ubatch sweep"
-    # Apply: b_list=$(apply_axis_opts "${full_b_list}" "${OPT_START_B}" "${OPT_DIR_B}")
-    # Apply: ub_list=$(apply_axis_opts "${full_ub_list}" "${OPT_START_UB}" "${OPT_DIR_UB}")
-    # TODO: implement batch pair iteration described above
+
+    local -a b_ub_pairs=(
+        "2048 512"
+        "2048 256"
+        "2048 128"
+        "1024 512"
+        "1024 256"
+        "1024 128"
+        "512 256"
+        "512 128"
+    )
+
+    local best_pp=-1
+    WS_B_UB=""
+
+    local pair
+    for pair in "${b_ub_pairs[@]}"; do
+        local b ub
+        read -r b ub <<< "${pair}"
+
+        # Apply start/direction filters
+        local b_filtered ub_filtered
+        b_filtered="$(apply_axis_opts "512 1024 2048" "${OPT_START_B}" "${OPT_DIR_B}")"
+        ub_filtered="$(apply_axis_opts "128 256 512" "${OPT_START_UB}" "${OPT_DIR_UB}")"
+        echo "${b_filtered}" | grep -qw "${b}" || continue
+        echo "${ub_filtered}" | grep -qw "${ub}" || continue
+        [[ ${ub} -gt ${b} ]] && continue
+
+        local status
+        status="$(run_bench "phase5/b=${b}_ub=${ub}" \
+            ngl="${BEST_NGL}" fa="${BEST_FA}" ctk="${BEST_CTK}" ctv="${BEST_CTV}" \
+            threads="${BEST_THREADS}" nkvo="${BEST_NKVO}" \
+            b="${b}" ub="${ub}" n_prompt=512 n_gen=0 reps="${SWEEP_REPETITIONS}" \
+            phase=5 phase_label="batch_sweep")"
+        if [[ "${status}" == "ok" ]]; then
+            WS_B_UB="${WS_B_UB:+${WS_B_UB}
+}${b} ${ub}"
+            local pp
+            pp="$(jq -rs --argjson ph 5 --argjson b "${b}" --argjson ub "${ub}" \
+                '[.[] | select(.phase==$ph and .params.b==$b and .params.ub==$ub and .status=="ok")] | .[0].results[]? | select(.test=="pp") | .avg_ts' \
+                "${OUTPUT_MODEL_DIR}/sweep.jsonl" 2>/dev/null | tail -1 || echo 0)"
+            pp="${pp:-0}"; pp="${pp/null/0}"
+            if awk "BEGIN{exit !(${pp}+0 > ${best_pp}+0)}"; then
+                best_pp="${pp}"
+                BEST_B="${b}"
+                BEST_UB="${ub}"
+            fi
+        fi
+    done
+
+    [[ -z "${WS_B_UB}" ]] && WS_B_UB="2048 512"
+    log "[Phase 5] Best batch: b=${BEST_B} ub=${BEST_UB} (PP=${best_pp} t/s)"
 }
 
 # -----------------------------------------------------------------------------
 # phase6_ctx_sweep
-#   Sweep context window sizes at the best configuration found so far.
-#   Sizes to test: 512 1024 2048 4096 8192 16384 32768 65536
-#   Stop (and record last-OK context) when:
-#     - detect_oom returns true, OR
-#     - tg t/s drops below SWEEP_MIN_TG_TS, OR
-#     - run_bench returns "too-slow"
-#   Best (largest stable) context stored in BEST_CTX.
+#   Sweep context window sizes at best config; stop on OOM or timeout.
+#   Largest stable context becomes BEST_CTX.
 # -----------------------------------------------------------------------------
 phase6_ctx_sweep() {
-    log "[Phase 6] Context window sweep"
-    # Apply: ctx_list=$(apply_axis_opts "${full_ctx_list}" "${OPT_START_CTX}" "${OPT_DIR_CTX}")
-    # TODO: implement context sweep with OOM/speed stop condition
-    # Context sizes: 512 1024 2048 4096 8192 16384 32768 65536
+    log "[Phase 6] Context size sweep"
+
+    local full_ctx_list="128 512 1024 2048 4096 8192 16384 32768 65536 131072"
+    local ctx_list
+    ctx_list="$(apply_axis_opts "${full_ctx_list}" "${OPT_START_CTX}" "${OPT_DIR_CTX}")"
+
+    WS_CTX=""
+    BEST_CTX=128
+
+    while IFS= read -r ctx; do
+        [[ -z "${ctx}" ]] && continue
+        local status
+        status="$(run_bench "phase6/ctx=${ctx}" \
+            ngl="${BEST_NGL}" fa="${BEST_FA}" ctk="${BEST_CTK}" ctv="${BEST_CTV}" \
+            threads="${BEST_THREADS}" nkvo="${BEST_NKVO}" \
+            b="${BEST_B}" ub="${BEST_UB}" \
+            n_prompt="${ctx}" n_gen=0 reps=2 \
+            phase=6 phase_label="ctx_sweep")"
+        if [[ "${status}" == "ok" ]]; then
+            WS_CTX="${WS_CTX:+${WS_CTX} }${ctx}"
+            BEST_CTX="${ctx}"
+        elif [[ "${status}" == "oom" || "${status}" == "timeout" ]]; then
+            log "[Phase 6] Stopping at ctx=${ctx} (${status})"
+            break
+        fi
+    done <<< "${ctx_list}"
+
+    [[ -z "${WS_CTX}" ]] && WS_CTX="512"
+    log "[Phase 6] Best (max) context: ${BEST_CTX}  Working set: ${WS_CTX}"
 }
 
 # -----------------------------------------------------------------------------
 # phase7_combination_matrix
-#   Build a pruned cartesian product of the top-N candidates from each prior
-#   phase and run every combination.
-#
-#   Algorithm:
-#     1. For each tunable axis (ngl, fa+ctk+ctv, threads, nkvo, b+ub, ctx),
-#        select the top-2 or top-3 results by tg t/s from sweep.jsonl.
-#     2. Compute the full cartesian product of these candidate sets.
-#     3. Prune combinations that are known-bad:
-#          - ctk requires fa=1 (e.g. turbo* types)
-#          - ctx > BEST_CTX (already proven to OOM)
-#          - b < ub (invalid)
-#     4. Run each surviving combination with SWEEP_REPETITIONS.
-#
-#   Pruning key: skip any combo where a dependent constraint from earlier
-#   phases is violated to avoid redundant OOM runs.
+#   Build a pruned cartesian product of top candidates from each prior phase
+#   and run every surviving combination.
 # -----------------------------------------------------------------------------
 phase7_combination_matrix() {
-    log "[Phase 7] Combination matrix sweep"
+    log "[Phase 7] Full combination matrix"
 
-    # Phase 7 uses exactly the values that phases 1-6 actually tested.
-    # --start-* and --*-dir flags already trimmed those phases, so the
-    # working sets here naturally reflect the user's sweep choices.
-    #
-    # Additionally, --min-* flags can further filter these sets:
-    #
-    # ngl_p7=$(apply_phase7_mins "ngl"     "${working_ngl}"     "${OPT_MIN_NGL}")
-    # thr_p7=$(apply_phase7_mins "threads" "${working_threads}" "${OPT_MIN_THREADS}")
-    # ctx_p7=$(apply_phase7_mins "ctx"     "${working_ctx}"     "${OPT_MIN_CTX}")
-    # ctk_p7=$(apply_phase7_mins "ctk"     "${working_ctk}"     "${OPT_MIN_CTK}")
-    # b_p7=$(apply_phase7_mins   "b"       "${working_b}"       "${OPT_MIN_B}")
-    # ub_p7=$(apply_phase7_mins  "ub"      "${working_ub}"       "${OPT_MIN_UB}")
-    #
-    # Log what was filtered:
-    # log "[PHASE 7] Working sets after minimums: ngl=${ngl_count} ctx=${ctx_count} ctk=${ctk_count}"
-    # log "[PHASE 7] Estimated combinations: ${total_estimate}"
+    # Apply Phase 7 minimums to working sets
+    local ngl_p7 thread_p7 ctx_p7 nkvo_p7
+    ngl_p7="$(apply_phase7_mins "ngl"     "$(echo "${WS_NGL}" | tr ' ' '\n')"     "${OPT_MIN_NGL}")"
+    thread_p7="$(apply_phase7_mins "threads" "$(echo "${WS_THREADS}" | tr ' ' '\n')" "${OPT_MIN_THREADS}")"
+    ctx_p7="$(apply_phase7_mins "ctx"     "$(echo "${WS_CTX}" | tr ' ' '\n')"     "${OPT_MIN_CTX}")"
+    nkvo_p7="$(echo "${WS_NKVO}" | tr ' ' '\n' | grep -v '^$')"
 
-    # TODO: implement cartesian product + pruning described above
+    local ctk_values
+    ctk_values="$(echo "${WS_FA_CTK}" | grep -v '^$' | awk '{print $2}' | sort -u)"
+    ctk_values="$(apply_phase7_mins "ctk" "${ctk_values}" "${OPT_MIN_CTK}")"
+
+    # Count estimate
+    local ngl_count thread_count ctx_count fa_ctk_count nkvo_count b_ub_count
+    ngl_count="$(echo "${ngl_p7}" | grep -c '[0-9]' || echo 1)"
+    thread_count="$(echo "${thread_p7}" | grep -c '[0-9a-z]' || echo 1)"
+    ctx_count="$(echo "${ctx_p7}" | grep -c '[0-9]' || echo 1)"
+    fa_ctk_count="$(echo "${WS_FA_CTK}" | grep -c '[0-9]' || echo 1)"
+    nkvo_count="$(echo "${nkvo_p7}" | grep -c '[0-9]' || echo 1)"
+    b_ub_count="$(echo "${WS_B_UB}" | grep -c '[0-9]' || echo 1)"
+    local total=$(( ngl_count * fa_ctk_count * thread_count * nkvo_count * b_ub_count * ctx_count ))
+    log "[Phase 7] Estimated combinations: ${total} (ngl×${ngl_count} fa_ctk×${fa_ctk_count} threads×${thread_count} nkvo×${nkvo_count} b_ub×${b_ub_count} ctx×${ctx_count})"
+
+    # Context OOM tracking: max ok ctx per "ngl ctk nkvo" triple
+    declare -A ctx_ceil=()
+
+    local run_count=0
+    local ngl fa ctk ctv threads b ub ctx nkvo
+
+    while IFS= read -r ngl; do
+        [[ -z "${ngl}" ]] && continue
+        while IFS= read -r fa_ctk_line; do
+            [[ -z "${fa_ctk_line}" ]] && continue
+            read -r fa ctk ctv <<< "${fa_ctk_line}"
+            # Filter by ctk minimums
+            echo "${ctk_values}" | grep -qw "${ctk}" || continue
+
+            while IFS= read -r nkvo; do
+                [[ -z "${nkvo}" ]] && continue
+                while IFS= read -r threads; do
+                    [[ -z "${threads}" ]] && continue
+                    while IFS= read -r b_ub_line; do
+                        [[ -z "${b_ub_line}" ]] && continue
+                        read -r b ub <<< "${b_ub_line}"
+                        [[ ${ub} -gt ${b} ]] && continue
+
+                        while IFS= read -r ctx; do
+                            [[ -z "${ctx}" ]] && continue
+
+                            # Context ceiling pruning
+                            local ceil_key="${ngl}_${ctk}_${nkvo}"
+                            if [[ -n "${ctx_ceil[${ceil_key}]+x}" ]]; then
+                                local max_ok="${ctx_ceil[${ceil_key}]}"
+                                if [[ ${ctx} -gt ${max_ok} ]]; then
+                                    log "[Phase 7] Skip ctx=${ctx} for ngl=${ngl}/ctk=${ctk}/nkvo=${nkvo} (OOM ceiling: ${max_ok})"
+                                    continue
+                                fi
+                            fi
+
+                            local t_arg=""
+                            [[ "${threads}" != "system_default" ]] && t_arg="threads=${threads}"
+
+                            local label="p7/ngl=${ngl}_fa=${fa}_ctk=${ctk}_nkvo=${nkvo}_b=${b}_ub=${ub}_ctx=${ctx}"
+                            local status
+                            status="$(run_bench "${label}" \
+                                ngl="${ngl}" fa="${fa}" ctk="${ctk}" ctv="${ctv}" \
+                                nkvo="${nkvo}" ${t_arg:+${t_arg}} \
+                                b="${b}" ub="${ub}" \
+                                n_prompt="${ctx}" n_gen=128 reps="${SWEEP_REPETITIONS}" \
+                                phase=7 phase_label="combination_matrix")"
+
+                            (( run_count++ ))
+                            [[ $(( run_count % 10 )) -eq 0 ]] && log "[Phase 7] ${run_count}/${total} combinations run"
+
+                            if [[ "${status}" == "oom" || "${status}" == "timeout" ]]; then
+                                # Record context ceiling for this triple
+                                if [[ -z "${ctx_ceil[${ceil_key}]+x}" ]] || \
+                                   [[ ${ctx} -lt ${ctx_ceil[${ceil_key}]} ]]; then
+                                    ctx_ceil[${ceil_key}]=$(( ctx / 2 ))
+                                    [[ ${ctx_ceil[${ceil_key}]} -lt 128 ]] && ctx_ceil[${ceil_key}]=0
+                                fi
+                            fi
+
+                        done <<< "${ctx_p7}"
+                    done <<< "${WS_B_UB}"
+                done <<< "${thread_p7}"
+            done <<< "${nkvo_p7}"
+        done <<< "${WS_FA_CTK}"
+    done <<< "${ngl_p7}"
+
+    log "[Phase 7] Complete — ${run_count} combinations run"
 }
 
 # -----------------------------------------------------------------------------
 # write_markdown
-#   Generate ${OUTPUT_MODEL_DIR}/results.md from sweep.jsonl.
-#   Sections:
-#     ## Hardware         — hardware summary block
-#     ## Phase Results    — one table per phase, sorted by tg t/s descending
-#     ## Best Configuration — the single winning parameter set
-#   Uses jq to pivot JSONL into Markdown table rows.
+#   Generate ${OUTPUT_MODEL_DIR}/sweep.md from sweep.jsonl.
 # -----------------------------------------------------------------------------
 write_markdown() {
-    log "write_markdown: not yet implemented"
-    # TODO: implement jq-based JSONL -> Markdown table generation
+    local md_file="${OUTPUT_MODEL_DIR}/sweep.md"
+    local jsonl="${OUTPUT_MODEL_DIR}/sweep.jsonl"
+    [[ -f "${jsonl}" ]] || return 0
+
+    {
+        echo "# Sweep Results: ${MODEL_STEM}"
+        echo
+        echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo
+
+        local phase phase_label
+        for phase in 0 1 2 3 4 5 6 7; do
+            phase_label="$(jq -r --argjson ph "${phase}" '[.[] | select(.phase==$ph)] | .[0].phase_label // empty' "${jsonl}" 2>/dev/null | head -1)"
+            [[ -z "${phase_label}" ]] && continue
+
+            echo "## Phase ${phase} — ${phase_label}"
+            echo
+            echo "| ngl | fa | ctk | threads | nkvo | b | ub | n_prompt | PP t/s | TG t/s | viable | status |"
+            echo "|-----|-----|-----|---------|------|---|----|---------:|-------:|-------:|--------|--------|"
+
+            jq -r --argjson ph "${phase}" '
+                [.[] | select(.phase==$ph)] |
+                sort_by(
+                    if .status == "ok" then
+                        (-.results[]? | select(.test=="tg") | .avg_ts) // 0
+                    else 1000000 end
+                ) |
+                .[] |
+                [
+                    .params.ngl,
+                    .params.fa,
+                    .params.ctk,
+                    (if .params.threads_is_default then "sys" else (.params.threads|tostring) end),
+                    .params.nkvo,
+                    .params.b,
+                    .params.ub,
+                    .params.n_prompt,
+                    ((.results[]? | select(.test=="pp") | .avg_ts | tostring) // "-"),
+                    ((.results[]? | select(.test=="tg") | .avg_ts | tostring) // "-"),
+                    (.viable // "-" | tostring),
+                    .status
+                ] | "| " + join(" | ") + " |"
+            ' "${jsonl}" 2>/dev/null
+            echo
+        done
+
+        # Context frontier (from Phase 7)
+        if jq -e '[.[] | select(.phase==7 and .status=="ok")] | length > 0' "${jsonl}" &>/dev/null; then
+            echo "## Context Frontier"
+            echo
+            echo "| ngl | ctk | nkvo | Max Context | PP t/s |"
+            echo "|-----|-----|------|------------:|-------:|"
+            jq -r '
+                [.[] | select(.phase==7 and .status=="ok" and .params.n_gen==0)] |
+                group_by([.params.ngl, .params.ctk, .params.nkvo]) |
+                .[] |
+                sort_by(-.params.n_prompt) | .[0] |
+                [
+                    .params.ngl,
+                    .params.ctk,
+                    .params.nkvo,
+                    .params.n_prompt,
+                    ((.results[]? | select(.test=="pp") | .avg_ts | tostring) // "-")
+                ] | "| " + join(" | ") + " |"
+            ' "${jsonl}" 2>/dev/null | sort -t'|' -k2 -rn
+            echo
+        fi
+
+    } > "${md_file}"
+
+    log "Markdown written: ${md_file}"
 }
 
 # -----------------------------------------------------------------------------
 # print_summary
-#   Print a concise ASCII table to the terminal summarising the sweep results:
-#     - Best NGL, best KV config, best threads, best batch, best context
-#     - Peak tg t/s and pp t/s achieved
-#     - Total wall-clock time for the sweep
-#     - Path to results.md and sweep.jsonl
+#   Print a concise ASCII summary of sweep results to the terminal.
 # -----------------------------------------------------------------------------
 print_summary() {
-    log "print_summary: not yet implemented"
-    # TODO: implement terminal summary table
+    local jsonl="${OUTPUT_MODEL_DIR}/sweep.jsonl"
+    [[ -f "${jsonl}" ]] || return 0
+
+    echo
+    printf '═%.0s' {1..60}; echo
+    printf ' Sweep complete: %s\n' "${MODEL_STEM}"
+    printf '═%.0s' {1..60}; echo
+    printf ' Best config:  ngl=%-4s fa=%-2s ctk=%-8s nkvo=%s\n' "${BEST_NGL}" "${BEST_FA}" "${BEST_CTK}" "${BEST_NKVO}"
+    printf ' Best context: %s tokens\n' "${BEST_CTX}"
+    printf ' Best threads: %s\n' "${BEST_THREADS:-system default}"
+    printf ' Output dir:   %s\n' "${OUTPUT_MODEL_DIR}"
+
+    # Top 5 TG configs
+    echo
+    echo " Top 5 TG configs:"
+    jq -rs '[.[] | select(.status=="ok")] |
+        sort_by(-(.results[]? | select(.test=="tg") | .avg_ts // 0)) |
+        .[:5] |
+        .[] |
+        "   ngl=\(.params.ngl) fa=\(.params.fa) ctk=\(.params.ctk) nkvo=\(.params.nkvo) → TG=\((.results[]? | select(.test=="tg") | .avg_ts) // "n/a") t/s"
+    ' "${jsonl}" 2>/dev/null || true
+
+    echo
+    local ok oom timeout error
+    ok="$(jq -s '[.[] | select(.status=="ok")] | length' "${jsonl}" 2>/dev/null || echo 0)"
+    oom="$(jq -s '[.[] | select(.status=="oom")] | length' "${jsonl}" 2>/dev/null || echo 0)"
+    timeout="$(jq -s '[.[] | select(.status=="timeout")] | length' "${jsonl}" 2>/dev/null || echo 0)"
+    error="$(jq -s '[.[] | select(.status=="error")] | length' "${jsonl}" 2>/dev/null || echo 0)"
+    printf ' Runs: %s ok  %s oom  %s timeout  %s error\n' "${ok}" "${oom}" "${timeout}" "${error}"
+    printf '═%.0s' {1..60}; echo
+    echo
 }
 
 # -----------------------------------------------------------------------------
 # sweep_model PATH
 #   Run all phases for a single model file.
-#   Responsibilities:
-#     1. Set MODEL_PATH, MODEL_STEM, OUTPUT_MODEL_DIR
-#     2. Call setup_output_dir and load_state
-#     3. For each phase 0..7:
-#          a. Check OPT_ONLY_PHASES / OPT_SKIP_PHASES — skip if excluded
-#          b. Check phases_complete (from load_state) — skip if already done
-#          c. Call the phase function
-#          d. Call save_state with the completed phase number
-#     4. Call write_markdown and print_summary
 # -----------------------------------------------------------------------------
 sweep_model() {
     local path="${1}"
@@ -1188,22 +1929,27 @@ sweep_model() {
     setup_output_dir
     load_state
 
-    # Phase execution helper — respects --only-phases and --skip-phases
     local phase
     for phase in 0 1 2 3 4 5 6 7; do
-        # TODO: implement phase skip/only logic
-        #   if [[ -n "${OPT_ONLY_PHASES}" ]] && ! echo "${OPT_ONLY_PHASES}" | grep -qw "${phase}"; then
-        #       log "Phase ${phase}: skipped (not in --only-phases)"
-        #       continue
-        #   fi
-        #   if [[ -n "${OPT_SKIP_PHASES}" ]] && echo "${OPT_SKIP_PHASES}" | grep -qw "${phase}"; then
-        #       log "Phase ${phase}: skipped (in --skip-phases)"
-        #       continue
-        #   fi
-        #   if <phase already in phases_complete>; then
-        #       log "Phase ${phase}: already complete — skipping (--resume)"
-        #       continue
-        #   fi
+        # --only-phases filter
+        if [[ -n "${OPT_ONLY_PHASES}" ]]; then
+            if ! echo ",${OPT_ONLY_PHASES}," | grep -q ",${phase},"; then
+                log "[Phase ${phase}] Skipped (not in --only-phases)"
+                continue
+            fi
+        fi
+        # --skip-phases filter
+        if [[ -n "${OPT_SKIP_PHASES}" ]]; then
+            if echo ",${OPT_SKIP_PHASES}," | grep -q ",${phase},"; then
+                log "[Phase ${phase}] Skipped (in --skip-phases)"
+                continue
+            fi
+        fi
+        # Resume: skip completed phases
+        if echo " ${PHASES_COMPLETE} " | grep -q " ${phase} "; then
+            log "[Phase ${phase}] Already complete — skipping (--resume)"
+            continue
+        fi
 
         case "${phase}" in
             0) phase0_ngl_probe ;;
@@ -1246,7 +1992,8 @@ main() {
     if ! $OPT_NO_CONFIRM && ! $OPT_DRY_RUN; then
         echo
         printf "Ready to sweep %d model(s). Output -> %s\n" "${#MODEL_LIST[@]}" "${SWEEP_OUTPUT_DIR}"
-        # TODO: read -r -p "Continue? [y/N] " reply; [[ "${reply}" =~ ^[Yy]$ ]] || die "Aborted by user"
+        read -r -p "Continue? [y/N] " reply
+        [[ "${reply}" =~ ^[Yy]$ ]] || die "Aborted by user"
     fi
 
     local model
