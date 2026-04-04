@@ -1830,7 +1830,7 @@ phase7_combination_matrix() {
                                 n_prompt="${ctx}" n_gen=128 reps="${SWEEP_REPETITIONS}" \
                                 phase=7 phase_label="combination_matrix")"
 
-                            (( run_count++ ))
+                            (( run_count++ )) || true
                             [[ $(( run_count % 10 )) -eq 0 ]] && log "[Phase 7] ${run_count}/${total} combinations run"
 
                             if [[ "${status}" == "oom" || "${status}" == "timeout" ]]; then
