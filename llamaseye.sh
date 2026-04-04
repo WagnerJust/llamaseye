@@ -1883,7 +1883,10 @@ phase6_ctx_sweep() {
                 fell_back=true
                 break
             fi
-            [[ "${fb_status}" == "timeout" ]] && break  # timeout mid-fallback: stop trying
+            # Note: do NOT break on timeout here — a timeout on one ctk type (e.g. f16)
+            # does not predict whether a more-compressed ctk (e.g. turbo3) will also
+            # time out. Turbo types compress the KV cache 3-6×, changing both memory
+            # pressure and throughput. Continue through all fallbacks.
         done
 
         if [[ "${fell_back}" != "true" ]]; then
