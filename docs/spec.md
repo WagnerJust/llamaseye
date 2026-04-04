@@ -215,6 +215,24 @@ The compression ratio directly multiplies available context. On a 12 GB GPU
 with a 8.5 GB model (~3.5 GB VRAM headroom at f16), `turbo3` extends context
 from ~16K to approximately ~80K.
 
+### Flash attention behaviour in turbo-llama-bench
+
+`turbo-llama-bench` uses the same flags as standard `llama-bench` (`-ctk` /
+`-ctv`, or long form `--cache-type-k` / `--cache-type-v`). The key difference is
+flash attention handling:
+
+| Type | `-fa` flag needed? | Notes |
+|------|--------------------|-------|
+| `turbo4` | Pass `-fa 1` explicitly | FA auto-enables internally, but explicit flag keeps output table unambiguous |
+| `turbo3` | Pass `-fa 1` explicitly | Same as turbo4 |
+| `turbo2` | Optional (`-fa 0` or `1`) | Works without FA; binary respects the flag |
+
+Because `turbo-llama-bench` defaults `-fa` to `0` (same as standard llama-bench),
+and turbo3/turbo4 silently override this to enable FA internally, passing `-fa 0`
+with those types would produce output rows that show `fa=0` while FA was actually
+active. The sweep always passes `-fa 1` for turbo3/turbo4 to keep records
+accurate.
+
 ### Binary selection rule
 
 `run_bench()` inspects the `ctk` parameter and picks the binary automatically:
@@ -454,16 +472,19 @@ ngl=max_ngl, nkvo=0, threads=system-default, b=2048, ub=512
 | `fa1_q8` | `1` | `q8_0` | `q8_0` | ✅ Always |
 | `fa1_q4` | `1` | `q4_0` | `q4_0` | ✅ Always (requires fa=1) |
 | `fa0_q4` | `0` | `q4_0` | `q4_0` | ❌ Skip — invalid combo |
-| `fa0_turbo4` | `0` | `turbo4` | `turbo4` | ⚙️ Turbo binary required |
 | `fa1_turbo4` | `1` | `turbo4` | `turbo4` | ⚙️ Turbo binary required |
-| `fa0_turbo3` | `0` | `turbo3` | `turbo3` | ⚙️ Turbo binary required |
+| `fa0_turbo4` | `0` | `turbo4` | `turbo4` | ❌ Skip — FA auto-enabled internally |
 | `fa1_turbo3` | `1` | `turbo3` | `turbo3` | ⚙️ Turbo binary required |
+| `fa0_turbo3` | `0` | `turbo3` | `turbo3` | ❌ Skip — FA auto-enabled internally |
 | `fa0_turbo2` | `0` | `turbo2` | `turbo2` | ⚙️ Turbo binary required |
 | `fa1_turbo2` | `1` | `turbo2` | `turbo2` | ⚙️ Turbo binary required |
 
-Turbo rows (⚙️) are only included when `TURBO_AVAILABLE=true`. Test both
-`fa=0` and `fa=1` for each turbo type — their FA compatibility is not guaranteed
-and may vary by model architecture. Treat any crash or OOM as a skipped config
+Turbo rows (⚙️) are only included when `TURBO_AVAILABLE=true`. For turbo3 and
+turbo4, `turbo-llama-bench` auto-enables flash attention internally even when
+`-fa 0` is passed — testing `fa=0` would produce ambiguous output (the table
+would show `fa=0` but FA was actually active). Only `fa=1` is run for those
+types. For turbo2, FA is not required and the binary respects the `-fa` flag, so
+both `fa=0` and `fa=1` are tested. Treat any crash or OOM as a skipped config
 and continue.
 
 Run standard rows first (in the order listed), then turbo rows. If all `fa=1`

@@ -1476,11 +1476,12 @@ phase2_fa_kv_sweep() {
         "1 q4_0 q4_0"
     )
     # Turbo combos
+    # turbo3/turbo4: FA is auto-enabled internally by turbo-llama-bench even when
+    # -fa 0 is passed, so testing fa=0 produces ambiguous output. Only run fa=1.
+    # turbo2: genuinely works without FA, so test both fa=0 and fa=1.
     if $TURBO_AVAILABLE; then
         combos+=(
-            "0 turbo4 turbo4"
             "1 turbo4 turbo4"
-            "0 turbo3 turbo3"
             "1 turbo3 turbo3"
             "0 turbo2 turbo2"
             "1 turbo2 turbo2"
