@@ -8,7 +8,7 @@ Systematically sweep every meaningful llama-bench parameter combination for any 
 
 **llamaseye** runs llama-bench across every meaningful parameter combination for any GGUF model. It sweeps each axis independently — GPU layer offload (ngl), flash attention, KV cache quantisation type, thread count, KV offload ratio, batch size, and context size — then runs a full combination matrix (Phase 7) to confirm which configs work together and find the true performance ceiling.
 
-Every result is recorded as JSONL in a per-model output directory, alongside a human-readable Markdown summary, a raw log, a hardware snapshot, and a resume-state file. Runs that trigger an OOM or timeout are caught, logged, and skipped — the sweep never hangs.
+Every result is recorded as JSONL in a per-model output directory, alongside a human-readable Markdown summary, a raw log, a hardware snapshot, and a resume-state file. Runs that trigger an OOM or timeout are caught and logged — the sweep never hangs. OOM and timeout are distinguished: OOM means a context size is impossible at that memory budget; timeout means it is achievable but slow. Timeout runs write a `"status": "timeout"` record with `wall_time_sec` to `sweep.jsonl` and appear in a dedicated section of `sweep.md`.
 
 The script is fully portable: it detects CPU core count, available RAM, GPU VRAM, the active compute backend (cuda / metal / cpu), and the correct thermal-sensor commands at runtime. There are no hardcoded machine values. Optionally, pass a TurboQuant build of llama-bench via `--turbo-bench` to unlock turbo2/turbo3/turbo4 KV cache types from the llama-cpp-turboquant fork, which compress the KV cache 3–6× and enable much longer contexts on the same hardware.
 
@@ -211,7 +211,7 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 | 3 | **Thread Count** | CPU thread count variants | Best NGL, best FA/KV |
 | 4 | **KV Offload** | KV cache in VRAM (nkvo=0) vs RAM (nkvo=1) | Best NGL, best FA/KV, best threads |
 | 5 | **Batch Size** | ubatch and batch size variants | Best values so far |
-| 6 | **Context Ceiling** | Prompt size scaled up to OOM/timeout, with fallback configs | Best values so far |
+| 6 | **Context Ceiling** | Prompt size scaled up to OOM/timeout, with fallback configs on OOM; timeout runs are recorded with wall time | Best values so far |
 | 7 | **Full Combination Matrix** | Cartesian product of all best-per-axis working sets | — |
 
 ---

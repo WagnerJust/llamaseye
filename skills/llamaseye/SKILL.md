@@ -152,6 +152,7 @@ table in the Phase 7 section showing max successful context per (ngl, ctk, nkvo)
 3. **`viable` flag** — `true` when TG avg_ts ≥ 2.0 t/s (usable for interactive inference)
 4. **NGL sweet spot** — Phase 1 table shows where adding more GPU layers stops helping
 5. **KV quant tradeoff** — Phase 2 shows speed vs. memory across f16, q8_0, q4_0, turbo types
+6. **Slow context section** — `sweep.md` has a "Context sizes that timed out (achievable but slow)" section when Phase 6 hits `SWEEP_TIMEOUT_SEC`; terminal shows `Slow context: N` — these sizes work, just need more than the timeout to prefill. The `sweep.jsonl` record has `"status":"timeout"` and a `wall_time_sec` field.
 
 **TG vs PP:**
 - **TG (token generation)** — decode speed; the metric for interactive/chat use
@@ -338,7 +339,7 @@ ssh user@inference-host "chmod +x ~/llamaseye.sh"
 | 3 | Thread count | CPU threads 1 → HW_CPU_LOGICAL | If no CPU offload layers |
 | 4 | KV offload (nkvo) | KV cache in VRAM vs RAM | If nkvo behaviour already known |
 | 5 | Batch/ubatch | Batch and micro-batch size combos | If throughput tuning not needed |
-| 6 | Context size | Prompt size 128 → 131072 (stops at OOM) | If context ceiling already known |
+| 6 | Context size | Prompt size 128 → 131072 (stops at OOM or timeout) | If context ceiling already known |
 | 7 | Combo matrix | Cartesian product of all values tested in phases 1–6 | Early exploration; run eventually |
 
 ---
