@@ -242,7 +242,7 @@ When `--min-*` flags are not set, Phase 7 auto-applies minimum filters so the co
 | NGL | `MAX_NGL − 1 step` (top 2 values) | `--min-ngl 0` |
 | Threads | `HW_CPU_PHYSICAL` (physical core count) | `--min-threads 1` |
 | Context | `--start-ctx` value, else `8192` | `--min-ctx 0` |
-| KV type | `q8_0` | `--min-ctk q4_0` |
+| KV type | `q8_0` normally; auto-lowered to most-compressed Phase-2-validated type when Phase 6 hit OOM | `--min-ctk q4_0` |
 | Batch | `BEST_B / 2` | `--min-b 512` |
 
 If `--start-ctx` is set and no context at or above that size succeeds in Phase 6, Phase 7 is skipped with a clear warning rather than silently running a useless matrix at a tiny fallback context.

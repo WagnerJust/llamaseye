@@ -341,7 +341,7 @@ ssh user@inference-host "chmod +x ~/llamaseye.sh"
 | 4 | KV offload (nkvo) | KV cache in VRAM vs RAM | If nkvo behaviour already known |
 | 5 | Batch/ubatch | Batch and micro-batch size combos | If throughput tuning not needed |
 | 6 | Context size | Prompt size 128 → 131072 (stops at OOM or timeout) | If context ceiling already known |
-| 7 | Combo matrix | Cartesian product of all values tested in phases 1–6 | Early exploration; run eventually |
+| 7 | Combo matrix | Cartesian product of all values tested in phases 1–6; auto min-ctk lowered to include turbo types when Phase 6 hit OOM | Early exploration; run eventually |
 
 ---
 
