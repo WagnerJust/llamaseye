@@ -166,6 +166,13 @@ OPT_MIN_CTK="${SWEEP_MIN_CTK:-}"                 # --min-ctk / SWEEP_MIN_CTK
 OPT_MIN_B="${SWEEP_MIN_B:-}"                     # --min-b / SWEEP_MIN_B
 OPT_MIN_UB="${SWEEP_MIN_UB:-}"                   # --min-ub / SWEEP_MIN_UB
 
+# --- Goal-directed Phase 7 ---
+OPT_GOAL="${SWEEP_GOAL:-}"                       # --goal / SWEEP_GOAL (e.g. "ctx=32768,tg=5")
+GOAL_CTX=""                                      # parsed from OPT_GOAL by parse_goal()
+GOAL_TG_TS=""
+GOAL_PP_TS=""
+GOAL_TARGET_COUNT=3                              # stop Phase 7 after this many goal-satisfying configs
+
 
 # =============================================================================
 # FUNCTIONS
@@ -283,6 +290,14 @@ Phase 7 minimum thresholds (auto-derived by default, override to disable):
   (which are already trimmed by --start-* and --*-dir flags). --min-* applies
   additional filtering on top of that. Auto-derived minimums are logged before
   the matrix runs so you can see exactly what was used.
+
+  --goal SPEC           Goal-directed Phase 7: run ranked combos, stop after
+                        ${GOAL_TARGET_COUNT} validated configs that meet SPEC.
+                        SPEC is comma-separated key=value pairs.
+                        Keys: ctx=N  tg=N (min TG t/s)  pp=N (min PP t/s)
+                        Example: --goal "ctx=32768,tg=5"
+                        Phases 0-6 are unaffected. Without --goal, Phase 7
+                        runs exhaustively as usual.
 
   --optimized-sweep     Parse GGUF metadata to predict max NGL and best context
                         ceiling, then derive --start-ngl and --start-ctx
@@ -446,6 +461,9 @@ parse_args() {
                 [[ "$2" != "up" && "$2" != "down" ]] && die "--fa-dir must be 'up' or 'down'"
                 OPT_DIR_FA="$2"; shift 2 ;;
 
+            --goal)
+                [[ $# -lt 2 ]] && die "--goal requires an argument (e.g. --goal \"ctx=32768,tg=5\")"
+                OPT_GOAL="$2"; shift 2 ;;
             --optimized-sweep)
                 OPT_OPTIMIZED_SWEEP=true; shift ;;
             --dry-run)
@@ -1032,6 +1050,31 @@ EOF
 # check_optimized_conflicts
 #   Die if --optimized-sweep was combined with explicit axis flags.
 #   Called once after parse_args(), before any sweep work begins.
+# -----------------------------------------------------------------------------
+# parse_goal
+#   Parse OPT_GOAL string (e.g. "ctx=32768,tg=5,pp=200") into GOAL_* globals.
+#   Called once from main() after parse_args().
+# -----------------------------------------------------------------------------
+parse_goal() {
+    [[ -z "${OPT_GOAL}" ]] && return 0
+    local pair k v
+    local IFS=','
+    for pair in ${OPT_GOAL}; do
+        k="${pair%%=*}"; v="${pair#*=}"
+        case "${k}" in
+            ctx) GOAL_CTX="${v}" ;;
+            tg)  GOAL_TG_TS="${v}" ;;
+            pp)  GOAL_PP_TS="${v}" ;;
+            *)   warn "[goal] Unknown key '${k}' ignored (valid keys: ctx, tg, pp)" ;;
+        esac
+    done
+    local desc=""
+    [[ -n "${GOAL_CTX}"    ]] && desc+=" ctx≥${GOAL_CTX}"
+    [[ -n "${GOAL_TG_TS}"  ]] && desc+=" tg≥${GOAL_TG_TS} t/s"
+    [[ -n "${GOAL_PP_TS}"  ]] && desc+=" pp≥${GOAL_PP_TS} t/s"
+    log "[goal] Active:${desc} — Phase 7 stops after ${GOAL_TARGET_COUNT} validated configs"
+}
+
 # -----------------------------------------------------------------------------
 check_optimized_conflicts() {
     $OPT_OPTIMIZED_SWEEP || return 0
@@ -2359,6 +2402,12 @@ phase7_combination_matrix() {
         eff_min_ctx="8192"
         log "[Phase 7] Auto min-ctx=${eff_min_ctx} (default minimum; override with --min-ctx N or SWEEP_MIN_CTX=N)"
     fi
+    # Goal ctx acts as a floor — take the higher of eff_min_ctx and GOAL_CTX
+    if [[ -n "${GOAL_CTX}" ]] && \
+       { [[ -z "${eff_min_ctx}" ]] || awk "BEGIN{exit !(${GOAL_CTX}+0 > ${eff_min_ctx}+0)}"; }; then
+        eff_min_ctx="${GOAL_CTX}"
+        log "[Phase 7] Goal ctx≥${GOAL_CTX} applied as min-ctx floor"
+    fi
 
     # Batch: keep only batch sizes ≥ BEST_B/2 (top half of what Phase 5 found).
     # This drops small batch sizes that consistently underperform.
@@ -2404,12 +2453,31 @@ phase7_combination_matrix() {
         return 0
     fi
 
-    # Count estimate
+    # Goal mode: sort ngl descending (best GPU coverage first) and log intent
+    local GOAL_DONE=false
+    local goal_met_count=0
+    if [[ -n "${OPT_GOAL}" ]]; then
+        local _goal_desc=""
+        [[ -n "${GOAL_CTX}"   ]] && _goal_desc+=" ctx≥${GOAL_CTX}"
+        [[ -n "${GOAL_TG_TS}" ]] && _goal_desc+=" tg≥${GOAL_TG_TS} t/s"
+        [[ -n "${GOAL_PP_TS}" ]] && _goal_desc+=" pp≥${GOAL_PP_TS} t/s"
+        log "[Phase 7] Goal mode:${_goal_desc} — stopping after ${GOAL_TARGET_COUNT} validated configs"
+        ngl_p7="$(echo "${ngl_p7}" | sort -rn)"
+    fi
+
+    # Count estimate — use post-filter fa_ctk count (not the full WS_FA_CTK)
     local ngl_count thread_count ctx_count fa_ctk_count nkvo_count b_ub_count
     ngl_count="$(echo "${ngl_p7}" | grep -c '[0-9]' || echo 1)"
     thread_count="$(echo "${thread_p7}" | grep -c '[0-9a-z]' || echo 1)"
     ctx_count="$(echo "${ctx_p7}" | grep -c '[0-9]' || echo 1)"
-    fa_ctk_count="$(echo "${WS_FA_CTK}" | grep -c '[0-9]' || echo 1)"
+    fa_ctk_count=0
+    local _est_line _est_ctk
+    while IFS= read -r _est_line; do
+        [[ -z "${_est_line}" ]] && continue
+        read -r _ _est_ctk _ <<< "${_est_line}"
+        echo "${ctk_values}" | grep -qw "${_est_ctk}" && (( fa_ctk_count++ )) || true
+    done <<< "${WS_FA_CTK}"
+    [[ ${fa_ctk_count} -eq 0 ]] && fa_ctk_count=1
     nkvo_count="$(echo "${nkvo_p7}" | grep -c '[0-9]' || echo 1)"
     b_ub_count="$(echo "${b_ub_p7}" | grep -c '[0-9]' || echo 1)"
     local total=$(( ngl_count * fa_ctk_count * thread_count * nkvo_count * b_ub_count * ctx_count ))
@@ -2422,23 +2490,29 @@ phase7_combination_matrix() {
     local ngl fa ctk ctv threads b ub ctx nkvo
 
     while IFS= read -r ngl; do
+        [[ "${GOAL_DONE}" == "true" ]] && break
         [[ -z "${ngl}" ]] && continue
         while IFS= read -r fa_ctk_line; do
+            [[ "${GOAL_DONE}" == "true" ]] && break
             [[ -z "${fa_ctk_line}" ]] && continue
             read -r fa ctk ctv <<< "${fa_ctk_line}"
             # Filter by ctk minimums
             echo "${ctk_values}" | grep -qw "${ctk}" || continue
 
             while IFS= read -r nkvo; do
+                [[ "${GOAL_DONE}" == "true" ]] && break
                 [[ -z "${nkvo}" ]] && continue
                 while IFS= read -r threads; do
+                    [[ "${GOAL_DONE}" == "true" ]] && break
                     [[ -z "${threads}" ]] && continue
                     while IFS= read -r b_ub_line; do
+                        [[ "${GOAL_DONE}" == "true" ]] && break
                         [[ -z "${b_ub_line}" ]] && continue
                         read -r b ub <<< "${b_ub_line}"
                         [[ ${ub} -gt ${b} ]] && continue
 
                         while IFS= read -r ctx; do
+                            [[ "${GOAL_DONE}" == "true" ]] && break
                             [[ -z "${ctx}" ]] && continue
 
                             # Context ceiling pruning
@@ -2475,6 +2549,35 @@ phase7_combination_matrix() {
                                 fi
                             fi
 
+                            # Goal mode: check if this ok run satisfies all goal requirements
+                            if [[ -n "${OPT_GOAL}" && "${status}" == "ok" ]]; then
+                                local _meets=true
+                                if [[ "${_meets}" == "true" && -n "${GOAL_TG_TS}" ]]; then
+                                    local _tg
+                                    _tg="$(tail -1 "${OUTPUT_MODEL_DIR}/sweep.jsonl" | \
+                                           jq -r '(.results[]? | select(.test=="tg") | .avg_ts) // 0' \
+                                           2>/dev/null || echo 0)"
+                                    awk "BEGIN{exit !(${_tg}+0 >= ${GOAL_TG_TS}+0)}" 2>/dev/null \
+                                        || _meets=false
+                                fi
+                                if [[ "${_meets}" == "true" && -n "${GOAL_PP_TS}" ]]; then
+                                    local _pp
+                                    _pp="$(tail -1 "${OUTPUT_MODEL_DIR}/sweep.jsonl" | \
+                                           jq -r '(.results[]? | select(.test=="pp") | .avg_ts) // 0' \
+                                           2>/dev/null || echo 0)"
+                                    awk "BEGIN{exit !(${_pp}+0 >= ${GOAL_PP_TS}+0)}" 2>/dev/null \
+                                        || _meets=false
+                                fi
+                                if [[ "${_meets}" == "true" ]]; then
+                                    (( goal_met_count++ )) || true
+                                    log "[Phase 7] Goal met (${goal_met_count}/${GOAL_TARGET_COUNT}): ngl=${ngl} ctk=${ctk} nkvo=${nkvo} ctx=${ctx}"
+                                    if [[ ${goal_met_count} -ge ${GOAL_TARGET_COUNT} ]]; then
+                                        log "[Phase 7] Goal satisfied — stopping early after ${run_count} combinations"
+                                        GOAL_DONE=true
+                                    fi
+                                fi
+                            fi
+
                         done <<< "${ctx_p7}"
                     done <<< "${b_ub_p7}"
                 done <<< "${thread_p7}"
@@ -2482,7 +2585,11 @@ phase7_combination_matrix() {
         done <<< "${WS_FA_CTK}"
     done <<< "${ngl_p7}"
 
-    log "[Phase 7] Complete — ${run_count} combinations run"
+    if [[ -n "${OPT_GOAL}" ]]; then
+        log "[Phase 7] Complete — ${run_count} combinations run, ${goal_met_count}/${GOAL_TARGET_COUNT} goal configs found"
+    else
+        log "[Phase 7] Complete — ${run_count} combinations run"
+    fi
 }
 
 # -----------------------------------------------------------------------------
@@ -2499,6 +2606,47 @@ write_markdown() {
         echo
         echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo
+
+        # Goal Results section — only when --goal was active and Phase 7 ran
+        if [[ -n "${OPT_GOAL}" ]] && \
+           jq -e '[.[] | select(.phase==7 and .status=="ok")] | length > 0' "${jsonl}" &>/dev/null; then
+            local _gd=""
+            [[ -n "${GOAL_CTX}"   ]] && _gd+=" ctx≥${GOAL_CTX}"
+            [[ -n "${GOAL_TG_TS}" ]] && _gd+=" tg≥${GOAL_TG_TS} t/s"
+            [[ -n "${GOAL_PP_TS}" ]] && _gd+=" pp≥${GOAL_PP_TS} t/s"
+            echo "## Goal Results —${_gd}"
+            echo
+            echo "Phase 7 configurations that satisfy the goal, ranked by TG t/s."
+            echo
+            echo "| ngl | fa | ctk | threads | nkvo | b | ub | n_prompt | PP t/s | TG t/s | viable |"
+            echo "|-----|-----|-----|---------|------|---|----|---------:|-------:|-------:|--------|"
+            jq -r \
+                --argjson goal_ctx  "$([ -n "${GOAL_CTX}"   ] && echo "${GOAL_CTX}"   || echo "0")" \
+                --argjson goal_tg   "$([ -n "${GOAL_TG_TS}" ] && echo "${GOAL_TG_TS}" || echo "0")" \
+                --argjson goal_pp   "$([ -n "${GOAL_PP_TS}" ] && echo "${GOAL_PP_TS}" || echo "0")" \
+                '[.[] | select(.phase==7 and .status=="ok") |
+                  select($goal_ctx == 0 or .params.n_prompt >= $goal_ctx) |
+                  select($goal_tg  == 0 or ((.results[]? | select(.test=="tg") | .avg_ts) // 0) >= $goal_tg) |
+                  select($goal_pp  == 0 or ((.results[]? | select(.test=="pp") | .avg_ts) // 0) >= $goal_pp)
+                ] |
+                sort_by(-((.results[]? | select(.test=="tg") | .avg_ts) // 0)) |
+                .[] |
+                [
+                    (.params.ngl | tostring),
+                    (.params.fa  | tostring),
+                    .params.ctk,
+                    (if .params.threads_is_default then "sys" else (.params.threads | tostring) end),
+                    (.params.nkvo | tostring),
+                    (.params.b    | tostring),
+                    (.params.ub   | tostring),
+                    (.params.n_prompt | tostring),
+                    ((.results[]? | select(.test=="pp") | .avg_ts | tostring) // "-"),
+                    ((.results[]? | select(.test=="tg") | .avg_ts | tostring) // "-"),
+                    (.viable // "-" | tostring)
+                ] | "| " + join(" | ") + " |"
+                ' "${jsonl}" 2>/dev/null
+            echo
+        fi
 
         local phase phase_label
         for phase in 0 1 2 3 4 5 6 7; do
@@ -2605,6 +2753,19 @@ print_summary() {
     local timeout_ctxs
     timeout_ctxs="$(jq -rs '[.[] | select(.phase==6 and .status=="timeout") | .params.n_prompt | tostring] | join(", ")' "${jsonl}" 2>/dev/null || true)"
     [[ -n "${timeout_ctxs}" ]] && printf ' Slow context: %s (timed out — achievable but slow)\n' "${timeout_ctxs}"
+    if [[ -n "${OPT_GOAL}" ]]; then
+        local _gc
+        _gc="$(jq -rs \
+            --argjson goal_ctx  "$([ -n "${GOAL_CTX}"   ] && echo "${GOAL_CTX}"   || echo "0")" \
+            --argjson goal_tg   "$([ -n "${GOAL_TG_TS}" ] && echo "${GOAL_TG_TS}" || echo "0")" \
+            --argjson goal_pp   "$([ -n "${GOAL_PP_TS}" ] && echo "${GOAL_PP_TS}" || echo "0")" \
+            '[.[] | select(.phase==7 and .status=="ok") |
+              select($goal_ctx == 0 or .params.n_prompt >= $goal_ctx) |
+              select($goal_tg  == 0 or ((.results[]? | select(.test=="tg") | .avg_ts) // 0) >= $goal_tg) |
+              select($goal_pp  == 0 or ((.results[]? | select(.test=="pp") | .avg_ts) // 0) >= $goal_pp)
+             ] | length' "${jsonl}" 2>/dev/null || echo 0)"
+        printf ' Goal configs: %s found (see sweep.md for details)\n' "${_gc}"
+    fi
     printf ' Best threads: %s\n' "${BEST_THREADS:-system default}"
     printf ' Output dir:   %s\n' "${OUTPUT_MODEL_DIR}"
 
@@ -2695,6 +2856,7 @@ sweep_model() {
 # -----------------------------------------------------------------------------
 main() {
     parse_args "$@"
+    parse_goal
     check_optimized_conflicts
 
     # Resolve the model list before printing anything substantial

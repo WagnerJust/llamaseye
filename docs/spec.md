@@ -673,6 +673,27 @@ each valid intersection.
   reaches 128k context that no single-axis test would have found)
 - The actual peak t/s and peak context ceiling for the model
 
+### Goal-directed Phase 7 (`--goal`)
+
+`--goal SPEC` switches Phase 7 from exhaustive to **ranked early-exit** mode. Phases 0–6 are unaffected.
+
+**SPEC format:** comma-separated `key=value` pairs. Keys: `ctx=N`, `tg=N` (min TG t/s), `pp=N` (min PP t/s). All optional; any combination is valid.
+
+```
+--goal "ctx=32768,tg=5"
+--goal "ctx=65536,tg=3,pp=200"
+```
+
+**Behaviour:**
+1. `ctx=N` in the goal acts as a floor for `min-ctx` (overrides auto-default if stricter)
+2. ngl working set is sorted descending (highest GPU coverage first) — best candidates run first
+3. After each `ok` run, the result is checked against all goal thresholds (ctx, tg, pp)
+4. When 3 validated configs meet the goal (configurable via `GOAL_TARGET_COUNT`), Phase 7 stops
+5. `sweep.md` gains a **Goal Results** section at the top listing satisfying configs ranked by TG t/s
+6. `print_summary` prints a `Goal configs: N found` line
+
+Without `--goal`, Phase 7 always runs exhaustively. Env var: `SWEEP_GOAL`.
+
 ### Phase 7 skip condition
 
 If `--start-ctx` (or `SWEEP_START_CTX`) was set and no context size at or above
@@ -1319,7 +1340,7 @@ Binaries: standard=/path/to/llama-bench  turbo=ENABLED (/path/to/turbo/llama-ben
 
 Phase 7 estimate:
   ngl values:     12
-  fa/ctk combos:  4  (+6 turbo combos = 10 total with TurboQuant enabled)
+  fa/ctk combos:  4  (post-min-ctk filter count — not the raw WS_FA_CTK count)
   thread values:  6  (derived from 8 physical / 16 logical cores)
   nkvo values:    2
   b/ub combos:    5

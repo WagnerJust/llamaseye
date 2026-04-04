@@ -130,6 +130,7 @@ llamaseye verifies the binary at startup by probing it with `-ctk turbo3`. If th
 | `--ngl-step <n>` | Step size for NGL axis sweep (default: 4) |
 | `--repetitions <n>` | Repetitions per benchmark run (default: 3) |
 | `--timeout <s>` | Per-run timeout in seconds (default: 600) |
+| `--goal <spec>` | Goal-directed Phase 7: stop after 3 validated configs meeting the spec. Format: `ctx=N,tg=N,pp=N` (all optional). Example: `--goal "ctx=32768,tg=5"` |
 | `--resume` | Resume a previous sweep, skipping completed phases |
 | `--overwrite` | Delete existing output dir and re-run everything |
 | `--only-phases <list>` | Comma-separated list of phase numbers to run (e.g. `0,1,7`) |
@@ -212,7 +213,7 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 | 4 | **KV Offload** | KV cache in VRAM (nkvo=0) vs RAM (nkvo=1) | Best NGL, best FA/KV, best threads |
 | 5 | **Batch Size** | ubatch and batch size variants | Best values so far |
 | 6 | **Context Ceiling** | Prompt size scaled up to OOM/timeout, with fallback configs on OOM; timeout runs are recorded with wall time | Best values so far |
-| 7 | **Full Combination Matrix** | Cartesian product of all best-per-axis working sets | — |
+| 7 | **Full Combination Matrix** | Cartesian product of all best-per-axis working sets; with `--goal`, runs ranked and exits early once the goal is satisfied | — |
 
 ---
 
