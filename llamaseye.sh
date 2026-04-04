@@ -255,19 +255,28 @@ Axis start points & directions:
   --start-fa 0|1        Begin FA sweep at this value (0=off, 1=on). Default: 0.
   --fa-dir up|down      FA sweep direction: up=0->1, down=1->0. Default: up.
 
-Phase 7 minimum thresholds:
+Phase 7 minimum thresholds (auto-derived by default, override to disable):
   --min-ngl N           Exclude ngl values below N from Phase 7 matrix.
+                        Default: MAX_NGL - 1 step (top 2 ngl values).
+                        Use --min-ngl 0 to include all ngl values.
   --min-threads N       Exclude thread counts below N from Phase 7 matrix.
+                        Default: HW_CPU_PHYSICAL (physical core count).
+                        Use --min-threads 1 to include all thread counts.
   --min-ctx N           Exclude context sizes below N from Phase 7 matrix.
+                        Default: inherited from --start-ctx if set, else no filter.
+                        If no ctx values pass the filter, Phase 7 is skipped with a warning.
   --min-ctk TYPE        Exclude KV types below TYPE (quality order) from Phase 7.
                         Quality order (low->high): turbo2 turbo3 turbo4 q4_0 q8_0 f16
                         e.g. --min-ctk q8_0 keeps only q8_0 and f16.
   --min-b N             Exclude batch sizes below N from Phase 7 matrix.
+                        Default: BEST_B / 2 (top half of batch sizes found).
+                        Use --min-b 512 to include all batch sizes.
   --min-ub N            Exclude ubatch sizes below N from Phase 7 matrix.
 
   Note: Phase 7 always inherits the values actually tested in phases 1-6
-  (which are already trimmed by --start-* and --*-dir flags). Use --min-*
-  for additional explicit filtering on top of that.
+  (which are already trimmed by --start-* and --*-dir flags). --min-* applies
+  additional filtering on top of that. Auto-derived minimums are logged before
+  the matrix runs so you can see exactly what was used.
 
   --dry-run             Print bench commands without executing them
   --no-confirm          Skip the pre-sweep confirmation prompt
@@ -280,9 +289,9 @@ ENVIRONMENT VARIABLES
 
 PHASES
   0  ngl_probe          Binary-search the max NGL that fits in VRAM
-  1  ngl_sweep          Sweep NGL 0..MAX_NGL in steps of SWEEP_NGL_STEP
+  1  ngl_sweep          Sweep NGL near MAX_NGL by default (use --start-ngl 0 for full sweep)
   2  fa_kv_sweep        Flash-attn × KV-type combinations
-  3  thread_sweep       CPU thread count from 1..logical-count
+  3  thread_sweep       CPU thread count from physical-cores..logical-count
   4  nkvo_sweep         No-KV-offload variants with optimal NGL
   5  batch_sweep        Batch / ubatch size pairs
   6  ctx_sweep          Context window sizes 512..max-stable
@@ -1405,8 +1414,12 @@ phase0_ngl_probe() {
 
 # -----------------------------------------------------------------------------
 # phase1_ngl_sweep
-#   Sweep NGL from 0 to MAX_NGL in steps of SWEEP_NGL_STEP.
+#   Sweep NGL from a smart default start (near MAX_NGL) to MAX_NGL.
 #   Best TG t/s config becomes BEST_NGL for subsequent phases.
+#
+#   Default start: MAX_NGL - 2*step (tests ~3 high values + exact max).
+#   Very-low NGL values are rarely interesting at large contexts; set
+#   --start-ngl 0 (or SWEEP_START_NGL=0) for a full 0→MAX_NGL sweep.
 # -----------------------------------------------------------------------------
 phase1_ngl_sweep() {
     log "[Phase 1] NGL axis sweep (step=${SWEEP_NGL_STEP})"
@@ -1427,9 +1440,22 @@ phase1_ngl_sweep() {
         [[ -z "${seen[$v]+x}" ]] && { deduped+=("${v}"); seen[$v]=1; }
     done
 
+    # Smart default start: begin 2 steps below MAX_NGL so Phase 1 characterises
+    # the high-performance region rather than burning time on low-ngl configs.
+    # Snapped to a step boundary so it always hits a list member.
+    # Override with --start-ngl 0 for a full sweep.
+    local effective_start_ngl="${OPT_START_NGL}"
+    if [[ -z "${effective_start_ngl}" ]]; then
+        local steps_from_max=2
+        local smart_start=$(( (MAX_NGL / SWEEP_NGL_STEP - steps_from_max) * SWEEP_NGL_STEP ))
+        [[ ${smart_start} -lt 0 ]] && smart_start=0
+        effective_start_ngl="${smart_start}"
+        log "[Phase 1] Auto start-ngl=${effective_start_ngl} (max_ngl=${MAX_NGL} − ${steps_from_max}×step); use --start-ngl 0 for full sweep"
+    fi
+
     # Apply start/direction
     local ngl_list
-    ngl_list="$(apply_axis_opts "${deduped[*]}" "${OPT_START_NGL}" "${OPT_DIR_NGL}")"
+    ngl_list="$(apply_axis_opts "${deduped[*]}" "${effective_start_ngl}" "${OPT_DIR_NGL}")"
 
     local best_tg=-1
     WS_NGL=""
@@ -1749,8 +1775,15 @@ phase6_ctx_sweep() {
         fi
     done <<< "${ctx_list}"
 
-    [[ -z "${WS_CTX}" ]] && WS_CTX="512"
-    log "[Phase 6] Best (max) context: ${BEST_CTX}  Working set: ${WS_CTX}"
+    if [[ -z "${WS_CTX}" ]]; then
+        if [[ -n "${OPT_START_CTX}" ]]; then
+            warn "[Phase 6] No context ≥ ${OPT_START_CTX} succeeded. WS_CTX will be empty — Phase 7 will produce 0 combinations for ctx."
+            warn "[Phase 6] To include smaller contexts, re-run with --start-ctx lowered or omitted."
+        else
+            WS_CTX="512"
+        fi
+    fi
+    log "[Phase 6] Best (max) context: ${BEST_CTX}  Working set: ${WS_CTX:-<empty>}"
 }
 
 # -----------------------------------------------------------------------------
@@ -1761,16 +1794,72 @@ phase6_ctx_sweep() {
 phase7_combination_matrix() {
     log "[Phase 7] Full combination matrix"
 
-    # Apply Phase 7 minimums to working sets
+    # --- Auto-derive Phase 7 minimums when not explicitly set ---
+    # Each auto-min is skipped when the user provides the corresponding
+    # --min-* flag or SWEEP_MIN_* env var. Override any auto-min with
+    # --min-ngl 0, --min-threads 1, etc. to disable it.
+
+    # NGL: keep only the top 2 values (MAX_NGL and one step below).
+    # Rationale: low-ngl configs rarely produce useful context sizes and
+    # inflate the matrix combinatorially.
+    local eff_min_ngl="${OPT_MIN_NGL}"
+    if [[ -z "${eff_min_ngl}" ]]; then
+        eff_min_ngl=$(( MAX_NGL - SWEEP_NGL_STEP ))
+        [[ ${eff_min_ngl} -lt 0 ]] && eff_min_ngl=0
+        log "[Phase 7] Auto min-ngl=${eff_min_ngl} (max_ngl=${MAX_NGL} − 1 step); override with --min-ngl"
+    fi
+
+    # Threads: skip counts below physical-core count.
+    # Sub-physical thread counts are almost never optimal for large models.
+    local eff_min_threads="${OPT_MIN_THREADS}"
+    if [[ -z "${eff_min_threads}" && "${HW_CPU_PHYSICAL}" -gt 1 ]]; then
+        eff_min_threads="${HW_CPU_PHYSICAL}"
+        log "[Phase 7] Auto min-threads=${eff_min_threads} (physical cores); override with --min-threads"
+    fi
+
+    # Context: inherit --start-ctx as the Phase 7 minimum when --min-ctx is not set.
+    # If the user said "start at 32k", they don't care about smaller contexts in Phase 7.
+    local eff_min_ctx="${OPT_MIN_CTX}"
+    if [[ -z "${eff_min_ctx}" && -n "${OPT_START_CTX}" ]]; then
+        eff_min_ctx="${OPT_START_CTX}"
+        log "[Phase 7] Auto min-ctx=${eff_min_ctx} (inherited from --start-ctx); override with --min-ctx"
+    fi
+
+    # Batch: keep only batch sizes ≥ BEST_B/2 (top half of what Phase 5 found).
+    # This drops small batch sizes that consistently underperform.
+    local eff_min_b="${OPT_MIN_B}"
+    if [[ -z "${eff_min_b}" && -n "${BEST_B}" && "${BEST_B}" -gt 0 ]]; then
+        eff_min_b=$(( BEST_B / 2 ))
+        [[ ${eff_min_b} -lt 512 ]] && eff_min_b=512
+        log "[Phase 7] Auto min-b=${eff_min_b} (best_b=${BEST_B} / 2); override with --min-b"
+    fi
+
+    # Apply minimums to working sets
     local ngl_p7 thread_p7 ctx_p7 nkvo_p7
-    ngl_p7="$(apply_phase7_mins "ngl"     "$(echo "${WS_NGL}" | tr ' ' '\n')"     "${OPT_MIN_NGL}")"
-    thread_p7="$(apply_phase7_mins "threads" "$(echo "${WS_THREADS}" | tr ' ' '\n')" "${OPT_MIN_THREADS}")"
-    ctx_p7="$(apply_phase7_mins "ctx"     "$(echo "${WS_CTX}" | tr ' ' '\n')"     "${OPT_MIN_CTX}")"
+    ngl_p7="$(apply_phase7_mins "ngl"     "$(echo "${WS_NGL}" | tr ' ' '\n')"     "${eff_min_ngl}")"
+    thread_p7="$(apply_phase7_mins "threads" "$(echo "${WS_THREADS}" | tr ' ' '\n')" "${eff_min_threads}")"
+    ctx_p7="$(apply_phase7_mins "ctx"     "$(echo "${WS_CTX}" | tr ' ' '\n')"     "${eff_min_ctx}")"
     nkvo_p7="$(echo "${WS_NKVO}" | tr ' ' '\n' | grep -v '^$')"
 
     local ctk_values
     ctk_values="$(echo "${WS_FA_CTK}" | grep -v '^$' | awk '{print $2}' | sort -u)"
     ctk_values="$(apply_phase7_mins "ctk" "${ctk_values}" "${OPT_MIN_CTK}")"
+
+    # Batch/ubatch: filter WS_B_UB pairs by eff_min_b (b value must be >= threshold)
+    local b_ub_p7
+    if [[ -n "${eff_min_b}" ]]; then
+        b_ub_p7="$(echo "${WS_B_UB}" | grep -v '^$' | awk -v min="${eff_min_b}" '$1+0 >= min+0')"
+        [[ -z "${b_ub_p7}" ]] && b_ub_p7="${WS_B_UB}"  # never drop all combos
+    else
+        b_ub_p7="${WS_B_UB}"
+    fi
+
+    # Bail early with a clear message if ctx filtering left nothing to test.
+    if [[ -z "$(echo "${ctx_p7}" | grep -v '^$')" ]]; then
+        warn "[Phase 7] No ctx values passed the minimum filter (min-ctx=${eff_min_ctx:-unset}). Phase 7 skipped."
+        warn "[Phase 7] To run Phase 7, lower or remove --min-ctx / --start-ctx, or re-run Phase 6 with a lower --start-ctx."
+        return 0
+    fi
 
     # Count estimate
     local ngl_count thread_count ctx_count fa_ctk_count nkvo_count b_ub_count
@@ -1779,7 +1868,7 @@ phase7_combination_matrix() {
     ctx_count="$(echo "${ctx_p7}" | grep -c '[0-9]' || echo 1)"
     fa_ctk_count="$(echo "${WS_FA_CTK}" | grep -c '[0-9]' || echo 1)"
     nkvo_count="$(echo "${nkvo_p7}" | grep -c '[0-9]' || echo 1)"
-    b_ub_count="$(echo "${WS_B_UB}" | grep -c '[0-9]' || echo 1)"
+    b_ub_count="$(echo "${b_ub_p7}" | grep -c '[0-9]' || echo 1)"
     local total=$(( ngl_count * fa_ctk_count * thread_count * nkvo_count * b_ub_count * ctx_count ))
     log "[Phase 7] Estimated combinations: ${total} (ngl×${ngl_count} fa_ctk×${fa_ctk_count} threads×${thread_count} nkvo×${nkvo_count} b_ub×${b_ub_count} ctx×${ctx_count})"
 
@@ -1844,7 +1933,7 @@ phase7_combination_matrix() {
                             fi
 
                         done <<< "${ctx_p7}"
-                    done <<< "${WS_B_UB}"
+                    done <<< "${b_ub_p7}"
                 done <<< "${thread_p7}"
             done <<< "${nkvo_p7}"
         done <<< "${WS_FA_CTK}"
