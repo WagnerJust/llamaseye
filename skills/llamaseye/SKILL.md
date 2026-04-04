@@ -75,6 +75,7 @@ tail -f ~/Models/bench/sweep/sweep.log
 | Situation | Flags |
 |-----------|-------|
 | First run of a model | No extra flags — full sweep |
+| **Just find the best config for my use case** | **`--goal "ctx=32768,tg=5"`** |
 | Interrupted run | `--resume` |
 | Re-run one or more phases | `--only-phases 6,7` |
 | Skip Phase 7 | `--skip-phases 7` |
