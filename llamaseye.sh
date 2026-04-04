@@ -176,9 +176,9 @@ OPT_MIN_UB="${SWEEP_MIN_UB:-}"                   # --min-ub / SWEEP_MIN_UB
 log() {
     local msg="[S$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
     if [[ -n "${OUTPUT_MODEL_DIR:-}" && -d "${OUTPUT_MODEL_DIR}" ]]; then
-        echo "$msg" | tee -a "${OUTPUT_MODEL_DIR}/sweep.log"
+        echo "$msg" | tee -a "${OUTPUT_MODEL_DIR}/sweep.log" >&2
     else
-        echo "$msg"
+        echo "$msg" >&2
     fi
 }
 
