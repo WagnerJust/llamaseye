@@ -1961,7 +1961,7 @@ phase7_combination_matrix() {
     ngl_p7="$(apply_phase7_mins "ngl"     "$(echo "${WS_NGL}" | tr ' ' '\n')"     "${eff_min_ngl}")"
     thread_p7="$(apply_phase7_mins "threads" "$(echo "${WS_THREADS}" | tr ' ' '\n')" "${eff_min_threads}")"
     ctx_p7="$(apply_phase7_mins "ctx"     "$(echo "${WS_CTX}" | tr ' ' '\n')"     "${eff_min_ctx}")"
-    nkvo_p7="$(echo "${WS_NKVO}" | tr ' ' '\n' | grep -v '^$')"
+    nkvo_p7="$(echo "${WS_NKVO}" | tr ' ' '\n' | grep -v '^$' || true)"
 
     # KV type: default to q8_0 (int8) minimum — exclude heavily-compressed types
     # unless the user explicitly asks for them or lowers the bar.
@@ -1972,13 +1972,13 @@ phase7_combination_matrix() {
     fi
 
     local ctk_values
-    ctk_values="$(echo "${WS_FA_CTK}" | grep -v '^$' | awk '{print $2}' | sort -u)"
+    ctk_values="$(echo "${WS_FA_CTK}" | grep -v '^$' | awk '{print $2}' | sort -u || true)"
     ctk_values="$(apply_phase7_mins "ctk" "${ctk_values}" "${eff_min_ctk}")"
 
     # Batch/ubatch: filter WS_B_UB pairs by eff_min_b (b value must be >= threshold)
     local b_ub_p7
     if [[ -n "${eff_min_b}" ]]; then
-        b_ub_p7="$(echo "${WS_B_UB}" | grep -v '^$' | awk -v min="${eff_min_b}" '$1+0 >= min+0')"
+        b_ub_p7="$(echo "${WS_B_UB}" | grep -v '^$' | awk -v min="${eff_min_b}" '$1+0 >= min+0' || true)"
         [[ -z "${b_ub_p7}" ]] && b_ub_p7="${WS_B_UB}"  # never drop all combos
     else
         b_ub_p7="${WS_B_UB}"
