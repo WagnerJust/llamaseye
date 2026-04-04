@@ -108,3 +108,12 @@ OPT_RESUME="${SWEEP_RESUME:-false}"   # env var sets default; CLI overrides
 - Pure-bash array builders are used in `save_state()` instead of jq pipelines (a previous bug source — jq arrays from bash loops had quoting issues)
 - Phase functions append to working sets with `WS_NGL+=" $val"` (space-separated strings, not arrays) to survive subshell boundaries
 - OOM detection uses `detect_oom()` called on the raw output file, not stderr trapping, because `timeout` complicates signal propagation
+
+## Documentation update rule
+
+**Every PR that changes behaviour in `llamaseye.sh` must also update:**
+1. `README.md` — user-facing description of affected phases, flags, or output
+2. `docs/spec.md` — engineering spec (JSONL schema, phase behaviour, output format)
+3. `skills/llamaseye/SKILL.md` — skill doc used by the Claude Code agent
+
+Update all three in the same branch/PR as the code change. Do not merge a code PR without the doc updates.

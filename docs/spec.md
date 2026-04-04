@@ -633,23 +633,28 @@ Use `-n 0` (PP-only) and `-r 2` to keep runtime bounded on large contexts.
 
 `128, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072`
 
-**Stop condition and fallback behavior:** When the primary config OOMs at a
-given context size, Phase 6 does not immediately stop. It first tries
-progressively more memory-friendly alternatives before giving up on that size:
+**Stop condition and fallback behavior:** Two distinct stop signals:
 
-1. Flip `nkvo` — move the KV cache from VRAM to RAM
-2. More-compressed `ctk` types (`q4_0`, then turbo types if available) × both
-   `nkvo` values
+- **OOM:** When the primary config runs out of memory, Phase 6 tries progressively
+  more memory-friendly alternatives before giving up on that size:
+  1. Flip `nkvo` — move the KV cache from VRAM to RAM
+  2. More-compressed `ctk` types (`q4_0`, then turbo types if available) × both
+     `nkvo` values
+  Only `ctk` and `nkvo` values already validated by Phases 2 and 4 are tried.
+  If any fallback succeeds, the context size is recorded as successful and the
+  sweep continues. If all fallbacks also OOM, the sweep stops.
 
-Only `ctk` and `nkvo` values already validated by Phases 2 and 4 are tried as
-fallbacks. If any fallback succeeds, the context size is recorded as successful
-(with the fallback parameters noted) and the sweep continues to the next larger
-size using that fallback config. If all fallbacks also OOM, the size is recorded
-as the ceiling boundary and the sweep stops.
+- **Timeout:** When the primary config is killed by `SWEEP_TIMEOUT_SEC`, the run
+  is recorded as `status: "timeout"` with `wall_time_sec` set to the actual
+  elapsed wall-clock seconds. **No fallback is attempted** — a timeout means
+  memory was sufficient, just throughput was too slow. The sweep stops. Timeout
+  context sizes are surfaced separately in `sweep.md` ("Context sizes that timed
+  out — achievable but slow") and in the terminal summary as `Slow context: N`.
 
 **Records written:** One JSONL record per context size and config attempted
-(including OOM records with `status: "oom"`). Fallback attempt records include
-a `fallback: true` annotation.
+(including OOM records with `status: "oom"` and timeout records with
+`status: "timeout"`). Fallback attempt records include a `fallback: true`
+annotation.
 
 ---
 
@@ -925,7 +930,8 @@ One record per llama-bench invocation. Append only.
     }
   ],
   "raw_output_file": "raw/a3f9c1d2.txt",
-  "error_snippet": null
+  "error_snippet": null,
+  "wall_time_sec": null
 }
 ```
 
@@ -933,7 +939,8 @@ One record per llama-bench invocation. Append only.
 `viable`: `true` if TG avg_ts >= 2.0, `false` if below, `null` if no TG run.  
 `binary`: `"standard"` (used `LLAMA_BENCH_BIN`) or `"turboquant"` (used `SWEEP_TURBO_BENCH_BIN`).  
 `threads_is_default`: `true` when no `-t` flag was passed (system default).  
-`error_snippet`: first 400 characters of error output when status != `"ok"`.
+`error_snippet`: first 400 characters of error output when status != `"ok"`.  
+`wall_time_sec`: integer elapsed seconds for the run; set on `"timeout"` records, `null` otherwise.
 
 ### Markdown summary table
 
@@ -945,6 +952,11 @@ one table per phase with columns:
 ```
 
 Sorted within each phase by TG t/s descending, OOM/timeout rows at the bottom.
+
+After Phase 6, if any context sizes timed out, a dedicated section is added:
+**Context sizes that timed out (achievable but slow)** — a table with ctx,
+`wall_time_sec`, ngl, ctk, nkvo. These are distinct from OOM: the model *can*
+process that context, it just takes longer than `SWEEP_TIMEOUT_SEC`.
 
 Phase 7 gets its own section: **Combination Matrix Results**, with an additional
 summary subsection: **Context Frontier** — a table of max successful context
