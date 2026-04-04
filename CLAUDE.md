@@ -15,6 +15,12 @@ bash llamaseye.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ./results
 # All models in a directory
 bash llamaseye.sh --models-dir ~/Models --output-dir ./results
 
+# From a model list file (one filename per line, # comments supported)
+bash llamaseye.sh --models-dir ~/Models --model-list my_models.txt --output-dir ./results
+
+# Auto-derive start-ngl and start-ctx from GGUF metadata (requires python3)
+bash llamaseye.sh --model ~/Models/model.gguf --optimized-sweep
+
 # Resume an interrupted sweep
 bash llamaseye.sh --model ~/Models/model.gguf --resume
 
@@ -53,14 +59,17 @@ Each phase sweeps **exactly one axis** while holding all other parameters at fix
 | 3 | Thread count | CPU threads 1 → `HW_CPU_LOGICAL` |
 | 4 | KV offload | KV cache in VRAM vs RAM (`nkvo`) |
 | 5 | Batch/ubatch | Batch and micro-batch size pairs |
-| 6 | Context ceiling | Prompt size 128 → 131072, stops at OOM |
+| 6 | Context ceiling | Prompt size 128 → 131072, stops at OOM; on OOM auto-retries with nkvo flip then more-compressed ctk types |
 | 7 | Combo matrix | Cartesian product of all working values from phases 1–6 |
 
 Phases 1–6 each populate a `WS_*` working set variable. Phase 7 takes the cartesian product of all of them.
 
+Phase 6 fallback order on OOM: (1) flip `nkvo`, (2) try progressively more-compressed `ctk` types × both `nkvo` values. Only ctk/nkvo values already validated by Phases 2 and 4 are tried as fallbacks.
+
 ### Key functions to know
 
 - `detect_hardware()` — probes CPU cores, RAM, VRAM, backend (`cuda`/`metal`/`cpu`), thermal sensors. Sets all `HW_*` vars. Runs once per model.
+- `analyze_model()` — when `--optimized-sweep` is active, parses GGUF metadata via an inline Python3 script to predict max NGL and best context ceiling, then sets `OPT_START_NGL` and `OPT_START_CTX`. Architecture-agnostic via `general.architecture`. Cannot be combined with any `--start-*` or `--min-*` flag.
 - `detect_turbo_binary()` — validates the optional TurboQuant llama-bench binary.
 - `run_bench()` — the core invocation: calls `timeout + llama-bench`, captures output, appends JSONL to `sweep.jsonl`, detects OOM/timeout.
 - `detect_oom()` — pattern matches stderr for OOM strings ("CUDA out of memory", "failed to allocate", etc.).
