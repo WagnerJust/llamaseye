@@ -792,6 +792,37 @@ load_state() {
 #   into the JSON so a resumed run has full context.
 #   Creates state.json if it does not exist.
 # -----------------------------------------------------------------------------
+# _nums_to_json SPACE_OR_NEWLINE_SEPARATED_NUMBERS
+#   Converts a list of numbers (space or newline separated) into a JSON array
+#   string. Always outputs a valid JSON array — emits "[]" on empty input.
+#   No jq required; pure bash arithmetic.
+_nums_to_json() {
+    local result="[" sep="" val
+    while IFS= read -r val; do
+        [[ -z "${val}" ]] && continue
+        result+="${sep}${val}"
+        sep=","
+    done <<< "$(echo "${1:-}" | tr ' ' '\n')"
+    result+="]"
+    echo "${result}"
+}
+
+# _strs_to_json SPACE_OR_NEWLINE_SEPARATED_STRINGS
+#   Like _nums_to_json but wraps each value in JSON double-quotes.
+_strs_to_json() {
+    local result="[" sep="" val
+    while IFS= read -r val; do
+        [[ -z "${val}" ]] && continue
+        # escape backslashes and double-quotes
+        val="${val//\\/\\\\}"
+        val="${val//\"/\\\"}"
+        result+="${sep}\"${val}\""
+        sep=","
+    done <<< "$(echo "${1:-}" | tr ' ' '\n')"
+    result+="]"
+    echo "${result}"
+}
+
 save_state() {
     local phase="${1:-}"
     local state_file="${OUTPUT_MODEL_DIR}/state.json"
@@ -805,25 +836,44 @@ save_state() {
         fi
     fi
 
-    # Build phases array JSON — jq -Rnc '[inputs|tonumber]' always emits [] on empty input
-    local phases_json
-    phases_json="$(echo "${PHASES_COMPLETE}" | tr ' ' '\n' | grep -v '^$' | jq -Rnc '[inputs | tonumber]' 2>/dev/null || echo '[]')"
-
-    # Build working sets JSON
-    local ngl_json thread_json nkvo_json ctx_json fa_ctk_json b_ub_json
-    ngl_json="$(echo "${WS_NGL}"     | tr ' ' '\n' | grep -v '^$' | jq -Rnc '[inputs | tonumber]' 2>/dev/null || echo '[]')"
-    nkvo_json="$(echo "${WS_NKVO}"  | tr ' ' '\n' | grep -v '^$' | jq -Rnc '[inputs | tonumber]' 2>/dev/null || echo '[]')"
-    ctx_json="$(echo "${WS_CTX}"    | tr ' ' '\n' | grep -v '^$' | jq -Rnc '[inputs | tonumber]' 2>/dev/null || echo '[]')"
+    # Build JSON arrays using pure-bash helpers (no jq pipelines — avoids empty-output edge cases)
+    local phases_json ngl_json nkvo_json ctx_json thread_json fa_ctk_json b_ub_json
+    phases_json="$(_nums_to_json "${PHASES_COMPLETE}")"
+    ngl_json="$(_nums_to_json "${WS_NGL}")"
+    nkvo_json="$(_nums_to_json "${WS_NKVO}")"
+    ctx_json="$(_nums_to_json "${WS_CTX}")"
     # Threads can contain "system_default" so keep as strings
-    thread_json="$(echo "${WS_THREADS}" | tr ' ' '\n' | grep -v '^$' | jq -Rnc '[inputs]' 2>/dev/null || echo '[]')"
-    fa_ctk_json="$(echo "${WS_FA_CTK}" | grep -v '^$' | while read -r fa ctk ctv; do
-        jq -cn --argjson fa "${fa}" --arg ctk "${ctk}" --arg ctv "${ctv}" '{fa:$fa,ctk:$ctk,ctv:$ctv}'
-    done | jq -sc '.' 2>/dev/null || echo '[]')"
-    [[ -z "${fa_ctk_json}" ]] && fa_ctk_json="[]"
-    b_ub_json="$(echo "${WS_B_UB}" | grep -v '^$' | while read -r b ub; do
-        jq -cn --argjson b "${b}" --argjson ub "${ub}" '{b:$b,ub:$ub}'
-    done | jq -sc '.' 2>/dev/null || echo '[]')"
-    [[ -z "${b_ub_json}" ]] && b_ub_json="[]"
+    thread_json="$(_strs_to_json "${WS_THREADS}")"
+
+    # fa_ctk combos: newline-separated "fa ctk ctv" triples
+    local fa_ctk_json="["
+    local fa_ctk_sep=""
+    local _line
+    while IFS= read -r _line; do
+        [[ -z "${_line}" ]] && continue
+        local _fa _ctk _ctv
+        read -r _fa _ctk _ctv <<< "${_line}"
+        local _obj
+        _obj="$(jq -cn --argjson fa "${_fa}" --arg ctk "${_ctk}" --arg ctv "${_ctv}" \
+            '{fa:$fa,ctk:$ctk,ctv:$ctv}')"
+        fa_ctk_json+="${fa_ctk_sep}${_obj}"
+        fa_ctk_sep=","
+    done <<< "${WS_FA_CTK}"
+    fa_ctk_json+="]"
+
+    # b_ub combos: newline-separated "b ub" pairs
+    local b_ub_json="["
+    local b_ub_sep=""
+    while IFS= read -r _line; do
+        [[ -z "${_line}" ]] && continue
+        local _b _ub
+        read -r _b _ub <<< "${_line}"
+        local _obj
+        _obj="$(jq -cn --argjson b "${_b}" --argjson ub "${_ub}" '{b:$b,ub:$ub}')"
+        b_ub_json+="${b_ub_sep}${_obj}"
+        b_ub_sep=","
+    done <<< "${WS_B_UB}"
+    b_ub_json+="]"
 
     jq -n \
         --arg model_path "${MODEL_PATH}" \
