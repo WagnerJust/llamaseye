@@ -958,7 +958,7 @@ wait_cool() {
 detect_oom() {
     local log_file="${1:-}"
     [[ -f "${log_file}" ]] || return 1
-    grep -qiE "(out of memory|failed to allocate|ggml_cuda_pool_alloc|CUDA error|cudaMalloc failed|ggml_backend_alloc|Cannot allocate memory|Killed|Segmentation fault|bus error|terminate called|GGML_ASSERT)" "${log_file}"
+    grep -qiE "(out of memory|failed to allocate|ggml_cuda_pool_alloc|CUDA error|cudaMalloc failed|ggml_backend_alloc|Cannot allocate memory|Killed|Segmentation fault|bus error|terminate called|GGML_ASSERT|failed to load model)" "${log_file}"
 }
 
 # -----------------------------------------------------------------------------
