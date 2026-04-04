@@ -777,13 +777,17 @@ setup_output_dir() {
 # -----------------------------------------------------------------------------
 load_state() {
     local state_file="${OUTPUT_MODEL_DIR}/state.json"
-    $OPT_RESUME || return 0
     [[ -f "${state_file}" ]] || return 0
 
-    log "[STATE] Resuming from ${state_file}"
+    # Always load best values and working sets when state.json exists — skipped
+    # phases need their results available for later phases (e.g. --only-phases 6,7
+    # needs WS_NGL/WS_FA_CTK/etc. from phases 1-5 to build the Phase 7 matrix).
+    local resuming=false
+    $OPT_RESUME && resuming=true
 
-    # Read phases_complete
-    PHASES_COMPLETE="$(jq -r '.phases_complete // [] | join(" ")' "${state_file}" 2>/dev/null || true)"
+    local log_prefix="[STATE]"
+    $resuming && log_prefix="[STATE] Resuming from ${state_file} —"
+
     MAX_NGL="$(jq -r '.max_ngl // 99' "${state_file}" 2>/dev/null || echo 99)"
     BEST_NGL="$(jq -r '.best.ngl // 99' "${state_file}" 2>/dev/null || echo 99)"
     BEST_FA="$(jq -r '.best.fa // 0' "${state_file}" 2>/dev/null || echo 0)"
@@ -802,7 +806,13 @@ load_state() {
     WS_B_UB="$(jq -r '.working_sets.b_ub_combos // [] | .[] | "\(.b) \(.ub)"' "${state_file}" 2>/dev/null || true)"
     WS_CTX="$(jq -r '.working_sets.ctx_values // [] | join(" ")' "${state_file}" 2>/dev/null || true)"
 
-    log "[STATE] Phases complete: ${PHASES_COMPLETE:-none}"
+    # phases_complete is only meaningful for --resume (controls phase skipping)
+    if $resuming; then
+        PHASES_COMPLETE="$(jq -r '.phases_complete // [] | join(" ")' "${state_file}" 2>/dev/null || true)"
+        log "${log_prefix} phases complete: ${PHASES_COMPLETE:-none}"
+    else
+        log "[STATE] Loaded prior working sets from ${state_file}"
+    fi
 }
 
 # -----------------------------------------------------------------------------
