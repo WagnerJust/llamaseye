@@ -641,17 +641,26 @@ detect_hardware() {
 # -----------------------------------------------------------------------------
 # detect_turbo_binary
 #   Check whether SWEEP_TURBO_BENCH_BIN is set, points to an executable file,
-#   and advertises turbo3 support via its --help output.
+#   and accepts turbo3 as a valid -ctk value.
+#
+#   The turbo-llama-bench binary does NOT list supported cache types in its
+#   --help output, so we probe by running the binary with -ctk turbo3 and no
+#   model. If the binary rejects the type it prints "unsupported" or "invalid"
+#   early in flag parsing. If it accepts the type it fails later with a model
+#   loading error — which is fine and means turbo3 is supported.
+#
 #   Sets TURBO_AVAILABLE=true on success; logs a warning and leaves it false
 #   otherwise.
 # -----------------------------------------------------------------------------
 detect_turbo_binary() {
     [[ -z "${SWEEP_TURBO_BENCH_BIN}" ]] && return 0
     [[ ! -x "${SWEEP_TURBO_BENCH_BIN}" ]] && warn "turbo-bench not executable" && return 0
-    "${SWEEP_TURBO_BENCH_BIN}" --help 2>&1 | grep -qi "turbo3" || {
-        warn "turbo-bench binary does not appear to support turbo3"
+    local probe_out
+    probe_out="$("${SWEEP_TURBO_BENCH_BIN}" -ctk turbo3 2>&1 || true)"
+    if echo "${probe_out}" | grep -qiE "unsupported|invalid|unknown.*(type|cache|ctk)"; then
+        warn "turbo-bench binary does not appear to support turbo3 (flag rejected)"
         return 0
-    }
+    fi
     TURBO_AVAILABLE=true
     log "turbo-bench available: ${SWEEP_TURBO_BENCH_BIN}"
 }
@@ -1390,13 +1399,13 @@ apply_phase7_mins() {
             for i in "${!ctk_order[@]}"; do
                 [[ "${ctk_order[$i]}" == "${val}" ]] && { val_idx=$i; break; }
             done
-            (( val_idx >= min_idx )) && echo "${val}"
+            (( val_idx >= min_idx )) && echo "${val}" || true
         done <<< "${values}"
     else
         local val
         while IFS= read -r val; do
             [[ -z "${val}" ]] && continue
-            (( val >= min_val )) && echo "${val}"
+            (( val >= min_val )) && echo "${val}" || true
         done <<< "${values}"
     fi
 }
