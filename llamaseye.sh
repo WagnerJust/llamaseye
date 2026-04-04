@@ -69,6 +69,10 @@ SWEEP_DELAY_SEC="${SWEEP_DELAY_SEC:-5}"
 # ionice / nice priority class (2 = best-effort) to keep system responsive
 SWEEP_PRIO="${SWEEP_PRIO:-2}"
 
+# Derive sweep flags automatically from model metadata + hardware inventory.
+# Requires python3. Conflicts with explicit --start-* / --min-* flags.
+OPT_OPTIMIZED_SWEEP="${SWEEP_OPTIMIZED_SWEEP:-false}"
+
 # =============================================================================
 # RUNTIME STATE — populated during execution, not user-configurable
 # =============================================================================
@@ -280,6 +284,11 @@ Phase 7 minimum thresholds (auto-derived by default, override to disable):
   additional filtering on top of that. Auto-derived minimums are logged before
   the matrix runs so you can see exactly what was used.
 
+  --optimized-sweep     Parse GGUF metadata to predict max NGL and best context
+                        ceiling, then derive --start-ngl and --start-ctx
+                        automatically. Requires python3. Cannot be combined with
+                        any --start-* or --min-* flag.
+
   --dry-run             Print bench commands without executing them
   --no-confirm          Skip the pre-sweep confirmation prompt
 
@@ -437,6 +446,8 @@ parse_args() {
                 [[ "$2" != "up" && "$2" != "down" ]] && die "--fa-dir must be 'up' or 'down'"
                 OPT_DIR_FA="$2"; shift 2 ;;
 
+            --optimized-sweep)
+                OPT_OPTIMIZED_SWEEP=true; shift ;;
             --dry-run)
                 OPT_DRY_RUN=true; shift ;;
             --no-confirm)
@@ -667,6 +678,383 @@ detect_turbo_binary() {
 
 # -----------------------------------------------------------------------------
 # print_hardware_summary
+# -----------------------------------------------------------------------------
+# analyze_model
+#   When --optimized-sweep is active, parse the current model's GGUF header
+#   via python3, compute VRAM/RAM budgets, and derive OPT_START_NGL and
+#   OPT_START_CTX so phases run only over the configurations that can
+#   plausibly fit in memory.
+#
+#   Architecture-agnostic: reads general.architecture to get the key prefix
+#   (llama, qwen3, gemma4, mistral3, deepseek2, …) and falls back to
+#   deriving missing fields (e.g. key_length from embedding_length/head_count).
+#
+#   Handles special cases:
+#     - per-layer head_count_kv arrays (Gemma 4 hybrid attention)
+#     - MLA architectures (DeepSeek2): uses key_length_mla for KV size
+#     - sliding window attention: SWA layers bounded by window_size, not ctx
+#     - missing key_length field: derived as embedding_length / head_count
+#
+#   Sets (only when not already set by the user):
+#     OPT_START_NGL  — begin Phase 1 at predicted VRAM ceiling (Phase 0 still
+#                      probes empirically, but uses this as its starting point)
+#     OPT_START_CTX  — begin Phase 6 at predicted max feasible context
+#
+#   Conflicts with any explicit --start-* or --min-* axis flags. Aborts if
+#   python3 is not in PATH.
+# -----------------------------------------------------------------------------
+analyze_model() {
+    $OPT_OPTIMIZED_SWEEP || return 0
+
+    command -v python3 &>/dev/null || die "--optimized-sweep requires python3 (not found in PATH)"
+
+    log "[OPTIMIZED] Analysing model metadata: ${MODEL_PATH}"
+
+    # -------------------------------------------------------------------------
+    # Parse GGUF header with an inline Python script.
+    # Outputs simple KEY=VALUE lines for bash to eval.
+    # -------------------------------------------------------------------------
+    local meta
+    meta="$( _GGUF_PATH="${MODEL_PATH}" python3 << 'PYEOF'
+import struct, sys, os
+
+path = os.environ.get("_GGUF_PATH", "")
+if not path:
+    sys.exit(1)
+
+TYPE_STRING, TYPE_ARRAY = 8, 9
+SZ = {0:1,1:1,2:2,3:2,4:4,5:4,6:4,7:1,10:8,11:8,12:8}
+FM = {0:"<B",1:"<b",2:"<H",3:"<h",4:"<I",5:"<i",6:"<f",7:"<?",10:"<Q",11:"<q",12:"<d"}
+
+def read_val(f, vtype):
+    if vtype == TYPE_STRING:
+        l = struct.unpack("<Q", f.read(8))[0]; return f.read(l).decode("utf-8", errors="replace")
+    if vtype == TYPE_ARRAY:
+        atype = struct.unpack("<I", f.read(4))[0]
+        alen  = struct.unpack("<Q", f.read(8))[0]
+        return [read_val(f, atype) for _ in range(alen)]
+    raw = f.read(SZ.get(vtype, 4))
+    fmt = FM.get(vtype)
+    return struct.unpack(fmt, raw)[0] if fmt else None
+
+try:
+    f = open(path, "rb")
+    f.read(4); f.read(4)  # magic, version
+    n_tensors = struct.unpack("<Q", f.read(8))[0]
+    n_kv      = struct.unpack("<Q", f.read(8))[0]
+
+    kv = {}
+    for _ in range(n_kv):
+        klen = struct.unpack("<Q", f.read(8))[0]
+        key  = f.read(klen).decode("utf-8", errors="replace")
+        vtype = struct.unpack("<I", f.read(4))[0]
+        val = read_val(f, vtype)
+        # Store by full key and by suffix after last dot
+        kv[key] = val
+        suffix = key.rsplit(".", 1)[-1]
+        if suffix not in kv:
+            kv[suffix] = val
+    f.close()
+except Exception as e:
+    print(f"error={e}", file=__import__("sys").stderr)
+    sys.exit(1)
+
+file_gib = os.path.getsize(path) / 1073741824
+
+arch          = kv.get("general.architecture", "unknown")
+block_count   = kv.get("block_count", kv.get(f"{arch}.block_count", 0))
+embed_len     = kv.get("embedding_length", kv.get(f"{arch}.embedding_length", 0))
+head_count    = kv.get("head_count", kv.get(f"{arch}.attention.head_count", 0))
+head_count_kv = kv.get("head_count_kv", kv.get(f"{arch}.attention.head_count_kv", 0))
+sliding_win   = kv.get("sliding_window", kv.get(f"{arch}.attention.sliding_window", 0))
+win_pattern   = kv.get("sliding_window_pattern", kv.get(f"{arch}.attention.sliding_window_pattern", []))
+
+# MLA (DeepSeek2): use compressed KV dimension for KV cache size
+key_len_mla   = kv.get("key_length_mla", kv.get(f"{arch}.attention.key_length_mla", 0))
+val_len_mla   = kv.get("value_length_mla", kv.get(f"{arch}.attention.value_length_mla", 0))
+key_len       = kv.get("key_length", kv.get(f"{arch}.attention.key_length", 0))
+val_len       = kv.get("value_length", kv.get(f"{arch}.attention.value_length", 0))
+
+# Prefer MLA dims if present (actual KV cache size)
+if key_len_mla: key_len = key_len_mla
+if val_len_mla: val_len = val_len_mla
+
+# Derive head_dim from embedding if key_length absent
+if not key_len and head_count:
+    key_len = embed_len // head_count
+if not val_len:
+    val_len = key_len
+
+# head_count_kv may be a per-layer array (Gemma 4 hybrid attention)
+# Use the maximum value across layers for a conservative KV estimate.
+kv_heads_max = head_count_kv
+if isinstance(head_count_kv, list):
+    kv_heads_max = max(head_count_kv) if head_count_kv else 0
+
+# Identify hybrid attention: sliding_window_pattern is a list of bools
+n_swa_layers    = 0
+n_global_layers = int(block_count)
+swa_head_dim    = key_len
+global_head_dim = key_len
+swa_kv_heads    = kv_heads_max
+global_kv_heads = kv_heads_max
+
+if isinstance(win_pattern, list) and win_pattern:
+    n_swa_layers    = sum(1 for v in win_pattern if v)
+    n_global_layers = sum(1 for v in win_pattern if not v)
+    # Per-layer head_count_kv array: global layers tend to cluster
+    if isinstance(head_count_kv, list) and win_pattern:
+        swa_heads_list    = [h for h,w in zip(head_count_kv, win_pattern) if w]
+        global_heads_list = [h for h,w in zip(head_count_kv, win_pattern) if not w]
+        swa_kv_heads    = max(swa_heads_list)    if swa_heads_list    else kv_heads_max
+        global_kv_heads = max(global_heads_list) if global_heads_list else kv_heads_max
+    # SWA and global layers may use different head_dims
+    swa_key_len    = kv.get("key_length_swa", kv.get(f"{arch}.attention.key_length_swa", key_len))
+    global_head_dim = key_len
+    swa_head_dim    = swa_key_len
+    has_hybrid = True
+else:
+    has_hybrid = False
+
+print(f"arch={arch}")
+print(f"file_gib={file_gib:.3f}")
+print(f"num_layers={int(block_count)}")
+print(f"head_count={int(head_count)}")
+print(f"kv_heads_max={int(kv_heads_max)}")
+print(f"key_len={int(key_len)}")
+print(f"has_hybrid={str(has_hybrid).lower()}")
+print(f"n_swa_layers={int(n_swa_layers)}")
+print(f"n_global_layers={int(n_global_layers)}")
+print(f"swa_kv_heads={int(swa_kv_heads)}")
+print(f"global_kv_heads={int(global_kv_heads)}")
+print(f"swa_head_dim={int(swa_head_dim)}")
+print(f"global_head_dim={int(global_head_dim)}")
+print(f"sliding_win={int(sliding_win)}")
+PYEOF
+)" 2>/dev/null
+
+    if [[ -z "${meta}" ]]; then
+        warn "[OPTIMIZED] Failed to parse GGUF metadata — skipping optimized analysis"
+        return 0
+    fi
+
+    # Parse output into local variables
+    local arch file_gib num_layers head_count kv_heads_max key_len
+    local has_hybrid n_swa_layers n_global_layers
+    local swa_kv_heads global_kv_heads swa_head_dim global_head_dim sliding_win
+    while IFS='=' read -r k v; do
+        case "${k}" in
+            arch)            arch="${v}" ;;
+            file_gib)        file_gib="${v}" ;;
+            num_layers)      num_layers="${v}" ;;
+            head_count)      head_count="${v}" ;;
+            kv_heads_max)    kv_heads_max="${v}" ;;
+            key_len)         key_len="${v}" ;;
+            has_hybrid)      has_hybrid="${v}" ;;
+            n_swa_layers)    n_swa_layers="${v}" ;;
+            n_global_layers) n_global_layers="${v}" ;;
+            swa_kv_heads)    swa_kv_heads="${v}" ;;
+            global_kv_heads) global_kv_heads="${v}" ;;
+            swa_head_dim)    swa_head_dim="${v}" ;;
+            global_head_dim) global_head_dim="${v}" ;;
+            sliding_win)     sliding_win="${v}" ;;
+        esac
+    done <<< "${meta}"
+
+    # Sanity-check required fields
+    if [[ -z "${num_layers}" || "${num_layers}" -eq 0 || -z "${kv_heads_max}" || "${kv_heads_max}" -eq 0 ]]; then
+        warn "[OPTIMIZED] Incomplete model metadata (layers=${num_layers} kv_heads=${kv_heads_max}) — skipping"
+        return 0
+    fi
+
+    # -------------------------------------------------------------------------
+    # NGL prediction
+    # Embedding + output weights are a fixed overhead (~1 average layer in size).
+    # The rest divides evenly across transformer layers.
+    # Apply a 90% VRAM utilisation cap (llama.cpp overhead, KV scratch buffers).
+    # -------------------------------------------------------------------------
+    local embed_overhead_gib layer_weight_gib max_ngl_pred
+    # awk-based float arithmetic (bash can't do floats)
+    read -r embed_overhead_gib layer_weight_gib max_ngl_pred << EOF
+$(awk -v file="${file_gib}" -v layers="${num_layers}" \
+      -v vram="${HW_GPU_VRAM_GIB}" \
+      'BEGIN {
+          embed = file / layers                     # ~1 layer worth for emb+output
+          per_layer = (file - embed) / layers
+          cap = vram * 0.90
+          ngl = int((cap - embed) / per_layer)
+          if (ngl < 0) ngl = 0
+          if (ngl > layers) ngl = layers
+          printf "%.3f %.3f %d\n", embed, per_layer, ngl
+      }')
+EOF
+
+    # -------------------------------------------------------------------------
+    # Context ceiling prediction per ctk type
+    # KV cache bytes at a given ctx and ctk:
+    #   standard:  2 × num_layers × kv_heads × head_dim × ctx × bytes_per_elem
+    #   hybrid:    global layers use full ctx; SWA layers bounded by window_size
+    #
+    # Check against:
+    #   nkvo=0: available VRAM headroom after weights for max_ngl_pred layers
+    #   nkvo=1: available RAM (conservative: 85% total - 65% × file_size for mmap)
+    #
+    # The mmap hot-fraction (0.65) is empirical: during inference most pages
+    # are touched but the OS can evict cold ones. This is the most uncertain
+    # part of the estimate; we add a wide "+2 steps" buffer below to compensate.
+    # -------------------------------------------------------------------------
+    local vram_headroom_gib ram_headroom_gib
+    read -r vram_headroom_gib ram_headroom_gib << EOF
+$(awk -v file="${file_gib}" -v layers="${num_layers}" \
+      -v ngl="${max_ngl_pred}" \
+      -v vram="${HW_GPU_VRAM_GIB}" \
+      -v ram="${HW_RAM_GIB}" \
+      -v embed="${embed_overhead_gib}" \
+      -v per_layer="${layer_weight_gib}" \
+      'BEGIN {
+          vram_weights = embed + per_layer * ngl
+          vram_head = vram * 0.90 - vram_weights
+          if (vram_head < 0) vram_head = 0
+          # RAM: 85% usable, 65% of file assumed hot via mmap
+          ram_head = ram * 0.85 - file * 0.65
+          if (ram_head < 0) ram_head = 0
+          printf "%.3f %.3f\n", vram_head, ram_head
+      }')
+EOF
+
+    # KV cache GiB for each ctk type at a given context.
+    # Returns the larger of nkvo=0 (VRAM) and nkvo=1 (RAM) requirements
+    # for the best-case scenario (whichever fits).
+    # CTK bytes per element: f16=2 q8_0=1 q4_0=0.5 turbo4=0.5 turbo3=0.375 turbo2=0.25
+    local ctx_list="128 512 1024 2048 4096 8192 16384 32768 65536 131072"
+    local best_ctx_vram=0 best_ctx_ram=0
+
+    # Use awk to compute KV cache sizes across all ctx × ctk combinations
+    local ctx_analysis
+    ctx_analysis="$(awk \
+        -v layers="${num_layers}" \
+        -v ngl="${max_ngl_pred}" \
+        -v kv_heads="${kv_heads_max}" \
+        -v key_dim="${key_len}" \
+        -v has_hybrid="${has_hybrid}" \
+        -v n_swa="${n_swa_layers}" \
+        -v n_global="${n_global_layers}" \
+        -v swa_heads="${swa_kv_heads}" \
+        -v global_heads="${global_kv_heads}" \
+        -v swa_dim="${swa_head_dim}" \
+        -v global_dim="${global_head_dim}" \
+        -v win="${sliding_win}" \
+        -v vram_head="${vram_headroom_gib}" \
+        -v ram_head="${ram_headroom_gib}" \
+        'BEGIN {
+            split("f16 q8_0 q4_0 turbo4 turbo3 turbo2", ctk_names)
+            split("2.0 1.0 0.5 0.5 0.375 0.25",         ctk_bytes)
+            split("128 512 1024 2048 4096 8192 16384 32768 65536 131072", ctx_vals)
+            GiB = 1073741824
+
+            for (ci in ctx_vals) {
+                ctx = ctx_vals[ci]
+                for (ki in ctk_names) {
+                    b = ctk_bytes[ki]
+                    ctk = ctk_names[ki]
+
+                    if (has_hybrid == "true" && win > 0) {
+                        # Global layers: full context; SWA layers: window-bounded
+                        swa_ctx = (ctx < win) ? ctx : win
+                        kv_total = (n_global * global_heads * global_dim * ctx * 2 * b \
+                                  + n_swa    * swa_heads    * swa_dim    * swa_ctx * 2 * b) / GiB
+                        # GPU portion: scale by layer fraction for nkvo=0
+                        gpu_frac = (ngl > 0) ? ngl / (n_global + n_swa) : 0
+                        kv_gpu   = kv_total * gpu_frac
+                    } else {
+                        kv_total = layers * kv_heads * key_dim * ctx * 2 * b / GiB
+                        gpu_frac = (ngl > 0) ? ngl / layers : 0
+                        kv_gpu   = kv_total * gpu_frac
+                    }
+
+                    fits_vram = (kv_gpu   <= vram_head)
+                    fits_ram  = (kv_total <= ram_head)
+                    printf "ctx=%d ctk=%s fits_vram=%d fits_ram=%d kv_gpu=%.3f kv_ram=%.3f\n", \
+                           ctx, ctk, fits_vram, fits_ram, kv_gpu, kv_total
+                }
+            }
+        }')"
+
+    # Find the best (largest) context that fits in VRAM and/or RAM for any ctk
+    while IFS=' ' read -r line; do
+        local ctx ctk fits_vram fits_ram
+        ctx="${line#ctx=}";      ctx="${ctx%% *}"
+        ctk="${line#*ctk=}";     ctk="${ctk%% *}"
+        fits_vram="${line#*fits_vram=}"; fits_vram="${fits_vram%% *}"
+        fits_ram="${line#*fits_ram=}";   fits_ram="${fits_ram%% *}"
+        (( fits_vram )) && (( ctx > best_ctx_vram )) && best_ctx_vram="${ctx}"
+        (( fits_ram  )) && (( ctx > best_ctx_ram  )) && best_ctx_ram="${ctx}"
+    done <<< "${ctx_analysis}"
+
+    local best_ctx
+    (( best_ctx_ram > best_ctx_vram )) && best_ctx="${best_ctx_ram}" || best_ctx="${best_ctx_vram}"
+    (( best_ctx == 0 )) && best_ctx=512  # fallback: at least try smallest
+
+    # -------------------------------------------------------------------------
+    # Derive flags — set only those not already provided by the user.
+    # "One step wider": start ctx one step below the predicted ceiling so Phase 6
+    # naturally tests the predicted max AND one size above it before OOMing.
+    # -------------------------------------------------------------------------
+    local ctx_list_arr=( 128 512 1024 2048 4096 8192 16384 32768 65536 131072 )
+    local derived_ctx="${best_ctx}"
+    for (( i=1; i<${#ctx_list_arr[@]}; i++ )); do
+        if (( ctx_list_arr[i] == best_ctx && i > 0 )); then
+            derived_ctx="${ctx_list_arr[$(( i - 1 ))]}"
+            break
+        fi
+    done
+
+    # -------------------------------------------------------------------------
+    # Print prediction summary
+    # -------------------------------------------------------------------------
+    log "[OPTIMIZED] ┌─ Model analysis: ${arch} — ${num_layers} layers — ${file_gib} GiB"
+    log "[OPTIMIZED] │  KV: ${kv_heads_max} heads × ${key_len}-dim$(
+        [[ "${has_hybrid}" == "true" ]] && echo " (hybrid: ${n_swa_layers} SWA window=${sliding_win} + ${n_global_layers} global)"
+    )"
+    log "[OPTIMIZED] │  Layer weight: ${layer_weight_gib} GiB  Embed overhead: ${embed_overhead_gib} GiB"
+    log "[OPTIMIZED] │  VRAM headroom after weights (ngl=${max_ngl_pred}): ${vram_headroom_gib} GiB"
+    log "[OPTIMIZED] │  RAM  headroom (mmap 65% hot): ${ram_headroom_gib} GiB"
+    log "[OPTIMIZED] │  Predicted max NGL: ${max_ngl_pred}  (empirical Phase 0 will confirm)"
+    log "[OPTIMIZED] │  Predicted best ctx (nkvo=0): ${best_ctx_vram}  (nkvo=1): ${best_ctx_ram}"
+    log "[OPTIMIZED] └─ Deriving: --start-ngl ${max_ngl_pred}  --start-ctx ${derived_ctx}"
+
+    # Apply derived flags (user-set values always win — checked by conflict guard)
+    OPT_START_NGL="${max_ngl_pred}"
+    OPT_START_CTX="${derived_ctx}"
+}
+
+# -----------------------------------------------------------------------------
+# check_optimized_conflicts
+#   Die if --optimized-sweep was combined with explicit axis flags.
+#   Called once after parse_args(), before any sweep work begins.
+# -----------------------------------------------------------------------------
+check_optimized_conflicts() {
+    $OPT_OPTIMIZED_SWEEP || return 0
+    local conflicts=()
+    [[ -n "${OPT_START_NGL}"     ]] && conflicts+=("--start-ngl")
+    [[ -n "${OPT_START_CTX}"     ]] && conflicts+=("--start-ctx")
+    [[ -n "${OPT_START_CTK}"     ]] && conflicts+=("--start-ctk")
+    [[ -n "${OPT_START_THREADS}" ]] && conflicts+=("--start-threads")
+    [[ -n "${OPT_START_B}"       ]] && conflicts+=("--start-b")
+    [[ -n "${OPT_START_UB}"      ]] && conflicts+=("--start-ub")
+    [[ -n "${OPT_START_FA}"      ]] && conflicts+=("--start-fa")
+    [[ -n "${OPT_MIN_NGL}"       ]] && conflicts+=("--min-ngl")
+    [[ -n "${OPT_MIN_CTX}"       ]] && conflicts+=("--min-ctx")
+    [[ -n "${OPT_MIN_CTK}"       ]] && conflicts+=("--min-ctk")
+    [[ -n "${OPT_MIN_THREADS}"   ]] && conflicts+=("--min-threads")
+    [[ -n "${OPT_MIN_B}"         ]] && conflicts+=("--min-b")
+    [[ -n "${OPT_MIN_UB}"        ]] && conflicts+=("--min-ub")
+    if (( ${#conflicts[@]} > 0 )); then
+        die "--optimized-sweep derives axis flags automatically and cannot be combined with: ${conflicts[*]}"
+    fi
+}
+
+# -----------------------------------------------------------------------------
 #   Print a human-readable table of HW_* values to the terminal (not the log).
 #   Called once before the sweep begins so the operator can sanity-check the
 #   detected hardware before committing to a long run.
@@ -2214,6 +2602,7 @@ sweep_model() {
     log "===== Starting sweep: ${MODEL_STEM} ====="
     setup_output_dir
     load_state
+    analyze_model
 
     local phase
     for phase in 0 1 2 3 4 5 6 7; do
@@ -2266,6 +2655,7 @@ sweep_model() {
 # -----------------------------------------------------------------------------
 main() {
     parse_args "$@"
+    check_optimized_conflicts
 
     # Resolve the model list before printing anything substantial
     resolve_model_list
