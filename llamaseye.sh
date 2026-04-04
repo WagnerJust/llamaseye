@@ -263,11 +263,13 @@ Phase 7 minimum thresholds (auto-derived by default, override to disable):
                         Default: HW_CPU_PHYSICAL (physical core count).
                         Use --min-threads 1 to include all thread counts.
   --min-ctx N           Exclude context sizes below N from Phase 7 matrix.
-                        Default: inherited from --start-ctx if set, else no filter.
+                        Default: inherited from --start-ctx if set, else 8192.
+                        Use --min-ctx 0 to include all context sizes.
                         If no ctx values pass the filter, Phase 7 is skipped with a warning.
   --min-ctk TYPE        Exclude KV types below TYPE (quality order) from Phase 7.
                         Quality order (low->high): turbo2 turbo3 turbo4 q4_0 q8_0 f16
-                        e.g. --min-ctk q8_0 keeps only q8_0 and f16.
+                        Default: q8_0. Use --min-ctk q4_0 (or turbo2) to include all types.
+                        e.g. --min-ctk turbo3 keeps turbo3, turbo4, q4_0, q8_0, f16.
   --min-b N             Exclude batch sizes below N from Phase 7 matrix.
                         Default: BEST_B / 2 (top half of batch sizes found).
                         Use --min-b 512 to include all batch sizes.
@@ -1926,10 +1928,14 @@ phase7_combination_matrix() {
 
     # Context: inherit --start-ctx as the Phase 7 minimum when --min-ctx is not set.
     # If the user said "start at 32k", they don't care about smaller contexts in Phase 7.
+    # If neither is set, apply a sensible baseline so trivially small contexts are excluded.
     local eff_min_ctx="${OPT_MIN_CTX}"
     if [[ -z "${eff_min_ctx}" && -n "${OPT_START_CTX}" ]]; then
         eff_min_ctx="${OPT_START_CTX}"
         log "[Phase 7] Auto min-ctx=${eff_min_ctx} (inherited from --start-ctx); override with --min-ctx"
+    elif [[ -z "${eff_min_ctx}" ]]; then
+        eff_min_ctx="8192"
+        log "[Phase 7] Auto min-ctx=${eff_min_ctx} (default minimum; override with --min-ctx N or SWEEP_MIN_CTX=N)"
     fi
 
     # Batch: keep only batch sizes ≥ BEST_B/2 (top half of what Phase 5 found).
@@ -1948,9 +1954,17 @@ phase7_combination_matrix() {
     ctx_p7="$(apply_phase7_mins "ctx"     "$(echo "${WS_CTX}" | tr ' ' '\n')"     "${eff_min_ctx}")"
     nkvo_p7="$(echo "${WS_NKVO}" | tr ' ' '\n' | grep -v '^$')"
 
+    # KV type: default to q8_0 (int8) minimum — exclude heavily-compressed types
+    # unless the user explicitly asks for them or lowers the bar.
+    local eff_min_ctk="${OPT_MIN_CTK}"
+    if [[ -z "${eff_min_ctk}" ]]; then
+        eff_min_ctk="q8_0"
+        log "[Phase 7] Auto min-ctk=${eff_min_ctk} (default minimum quality; override with --min-ctk TYPE or SWEEP_MIN_CTK=TYPE)"
+    fi
+
     local ctk_values
     ctk_values="$(echo "${WS_FA_CTK}" | grep -v '^$' | awk '{print $2}' | sort -u)"
-    ctk_values="$(apply_phase7_mins "ctk" "${ctk_values}" "${OPT_MIN_CTK}")"
+    ctk_values="$(apply_phase7_mins "ctk" "${ctk_values}" "${eff_min_ctk}")"
 
     # Batch/ubatch: filter WS_B_UB pairs by eff_min_b (b value must be >= threshold)
     local b_ub_p7
