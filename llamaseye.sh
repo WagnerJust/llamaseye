@@ -1411,7 +1411,7 @@ write_jsonl_record() {
     local nkvo="${BEST_NKVO}" threads="" threads_is_default="true"
     local b="${BEST_B}" ub="${BEST_UB}" n_prompt=512 n_gen=128 reps="${SWEEP_REPETITIONS}"
     local pp_ts="0" pp_stddev="0" tg_ts="0" tg_stddev="0"
-    local raw_output_file="" error_snippet=""
+    local raw_output_file="" error_snippet="" wall_time_sec=""
 
     for kv in "$@"; do
         local k="${kv%%=*}" v="${kv#*=}"
@@ -1441,6 +1441,7 @@ write_jsonl_record() {
             tg_stddev)          tg_stddev="${v}" ;;
             raw_output_file)    raw_output_file="${v}" ;;
             error_snippet)      error_snippet="${v}" ;;
+            wall_time_sec)      wall_time_sec="${v}" ;;
         esac
     done
 
@@ -1497,12 +1498,14 @@ write_jsonl_record() {
         --argjson results "${results_json}" \
         --arg raw_output_file "${raw_output_file}" \
         --arg error_snippet "${error_snippet}" \
+        --argjson wall_time_sec "$([ -n "${wall_time_sec}" ] && echo "${wall_time_sec}" || echo "null")" \
         '{run_id:$run_id,timestamp:$ts,model_path:$model_path,model_stem:$model_stem,
           phase:$phase,phase_label:$phase_label,binary:$binary,status:$status,viable:$viable,
           params:{ngl:$ngl,fa:$fa,ctk:$ctk,ctv:$ctv,nkvo:$nkvo,threads:$threads,
                   threads_is_default:$threads_is_default,b:$b,ub:$ub,
                   n_prompt:$n_prompt,n_gen:$n_gen,repetitions:$reps},
           results:$results,
+          wall_time_sec:$wall_time_sec,
           raw_output_file:(if $raw_output_file=="" then null else $raw_output_file end),
           error_snippet:(if $error_snippet=="" then null else $error_snippet end)
         }' >> "${OUTPUT_MODEL_DIR}/sweep.jsonl"
@@ -1579,17 +1582,21 @@ run_bench() {
     sleep "${SWEEP_DELAY_SEC}"
 
     local exit_code=0
+    local run_start_epoch
+    run_start_epoch="$(date +%s)"
     timeout "${SWEEP_TIMEOUT_SEC}" "${cmd[@]}" > "${raw_file}" 2>"${stderr_file}" || exit_code=$?
+    local run_wall_time_sec=$(( $(date +%s) - run_start_epoch ))
 
     # Timeout
     if [[ ${exit_code} -eq 124 ]]; then
-        log "[TIMEOUT] ${label} — killed after ${SWEEP_TIMEOUT_SEC}s"
+        log "[TIMEOUT] ${label} — killed after ${run_wall_time_sec}s"
         write_jsonl_record \
             run_id="${run_id}" phase="${phase}" phase_label="${phase_label}" \
             binary="${binary_label}" status="timeout" viable="false" \
             ngl="${ngl}" fa="${fa}" ctk="${ctk}" ctv="${ctv}" nkvo="${nkvo}" \
             threads="${threads}" b="${b}" ub="${ub}" \
             n_prompt="${n_prompt}" n_gen="${n_gen}" reps="${reps}" \
+            wall_time_sec="${run_wall_time_sec}" \
             error_snippet="$(head -c 400 "${stderr_file}" 2>/dev/null || true)"
         echo "timeout"
         return 0
@@ -2529,6 +2536,30 @@ write_markdown() {
             echo
         done
 
+        # Phase 6 timeout ctx sizes — achievable but slow
+        if jq -e '[.[] | select(.phase==6 and .status=="timeout")] | length > 0' "${jsonl}" &>/dev/null; then
+            echo "## Phase 6 — Context sizes that timed out (achievable but slow)"
+            echo
+            echo "These context sizes were not OOM — they timed out after \`${SWEEP_TIMEOUT_SEC}s\`."
+            echo "They are feasible for overnight batch jobs but impractical for interactive use."
+            echo
+            echo "| ctx | wall time (s) | ngl | ctk | nkvo |"
+            echo "|----:|--------------:|-----|-----|------|"
+            jq -r '
+                [.[] | select(.phase==6 and .status=="timeout")] |
+                sort_by(.params.n_prompt) |
+                .[] |
+                [
+                    (.params.n_prompt | tostring),
+                    ((.wall_time_sec // "-") | tostring),
+                    (.params.ngl | tostring),
+                    .params.ctk,
+                    (.params.nkvo | tostring)
+                ] | "| " + join(" | ") + " |"
+            ' "${jsonl}" 2>/dev/null
+            echo
+        fi
+
         # Context frontier (from Phase 7)
         if jq -e '[.[] | select(.phase==7 and .status=="ok")] | length > 0' "${jsonl}" &>/dev/null; then
             echo "## Context Frontier"
@@ -2570,6 +2601,10 @@ print_summary() {
     printf '═%.0s' {1..60}; echo
     printf ' Best config:  ngl=%-4s fa=%-2s ctk=%-8s nkvo=%s\n' "${BEST_NGL}" "${BEST_FA}" "${BEST_CTK}" "${BEST_NKVO}"
     printf ' Best context: %s tokens\n' "${BEST_CTX}"
+    # Mention any Phase 6 ctx sizes that timed out (achievable but slow)
+    local timeout_ctxs
+    timeout_ctxs="$(jq -rs '[.[] | select(.phase==6 and .status=="timeout") | .params.n_prompt | tostring] | join(", ")' "${jsonl}" 2>/dev/null || true)"
+    [[ -n "${timeout_ctxs}" ]] && printf ' Slow context: %s (timed out — achievable but slow)\n' "${timeout_ctxs}"
     printf ' Best threads: %s\n' "${BEST_THREADS:-system default}"
     printf ' Output dir:   %s\n' "${OUTPUT_MODEL_DIR}"
 
