@@ -914,6 +914,8 @@ Single Bash script: `llamaseye.sh`
 All overridable via environment variable or CLI flag. The script reads
 environment variables first, then CLI flags override them, so both styles work.
 
+> **Note:** Every CLI flag has a corresponding environment variable. CLI flags always take precedence over environment variables when both are set.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLAMA_BENCH_BIN` | `~/llama.cpp/build/bin/llama-bench` | Path to standard llama-bench binary |
@@ -930,6 +932,41 @@ environment variables first, then CLI flags override them, so both styles work.
 | `SWEEP_COOL_POLL_SEC` | `20` | Seconds between thermal polls |
 | `SWEEP_DELAY_SEC` | `5` | Seconds between runs |
 | `SWEEP_PRIO` | `2` | `--prio` passed to llama-bench |
+
+**Axis start points, directions & Phase 7 minimums**
+
+These variables were previously CLI-only but are now also read from the environment:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SWEEP_RESUME` | `false` | Skip already-completed phases (`--resume`) |
+| `SWEEP_OVERWRITE` | `false` | Delete existing output dir before starting (`--overwrite`) |
+| `SWEEP_DRY_RUN` | `false` | Print commands without executing (`--dry-run`) |
+| `SWEEP_NO_CONFIRM` | `false` | Skip pre-sweep confirmation prompt (`--no-confirm`) |
+| `SWEEP_NO_THERMAL` | `false` | Disable thermal polling entirely (`--no-thermal-guard`) |
+| `SWEEP_ONLY_PHASES` | *(unset)* | Run only these phases, comma-separated (`--only-phases`) |
+| `SWEEP_SKIP_PHASES` | *(unset)* | Skip these phases, comma-separated (`--skip-phases`) |
+| `SWEEP_MODEL_LIST` | *(unset)* | Path to model list file (`--model-list`) |
+| `SWEEP_START_NGL` | *(unset)* | Begin NGL sweep at this value (`--start-ngl`) |
+| `SWEEP_START_THREADS` | *(unset)* | Begin thread sweep at this value (`--start-threads`) |
+| `SWEEP_START_CTX` | *(unset)* | Begin context sweep at this prompt size (`--start-ctx`) |
+| `SWEEP_START_CTK` | *(unset)* | Begin KV quant sweep at this type (`--start-ctk`) |
+| `SWEEP_START_B` | *(unset)* | Begin batch sweep at this value (`--start-b`) |
+| `SWEEP_START_UB` | *(unset)* | Begin ubatch sweep at this value (`--start-ub`) |
+| `SWEEP_START_FA` | *(unset)* | Begin FA sweep at this value 0\|1 (`--start-fa`) |
+| `SWEEP_NGL_DIR` | `up` | NGL sweep direction up\|down (`--ngl-dir`) |
+| `SWEEP_THREADS_DIR` | `up` | Thread sweep direction up\|down (`--threads-dir`) |
+| `SWEEP_CTX_DIR` | `up` | Context sweep direction up\|down (`--ctx-dir`) |
+| `SWEEP_CTK_DIR` | `up` | KV quant sweep direction up\|down (`--ctk-dir`) |
+| `SWEEP_B_DIR` | `up` | Batch sweep direction up\|down (`--b-dir`) |
+| `SWEEP_UB_DIR` | `up` | Ubatch sweep direction up\|down (`--ub-dir`) |
+| `SWEEP_FA_DIR` | `up` | FA sweep direction up\|down (`--fa-dir`) |
+| `SWEEP_MIN_NGL` | *(unset)* | Exclude NGL values below N from Phase 7 (`--min-ngl`) |
+| `SWEEP_MIN_THREADS` | *(unset)* | Exclude thread counts below N from Phase 7 (`--min-threads`) |
+| `SWEEP_MIN_CTX` | *(unset)* | Exclude context sizes below N from Phase 7 (`--min-ctx`) |
+| `SWEEP_MIN_CTK` | *(unset)* | Exclude KV types below TYPE from Phase 7 (`--min-ctk`) |
+| `SWEEP_MIN_B` | *(unset)* | Exclude batch sizes below N from Phase 7 (`--min-b`) |
+| `SWEEP_MIN_UB` | *(unset)* | Exclude ubatch sizes below N from Phase 7 (`--min-ub`) |
 
 ### Function outline
 

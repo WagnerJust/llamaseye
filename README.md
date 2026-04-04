@@ -52,7 +52,7 @@ cp example.env .env
 source .env && bash llamaseye.sh --models-dir ~/Models
 ```
 
-`example.env` in the repo root documents every available variable with its default value and a description. The most important ones to set are `LLAMA_BENCH_BIN` (path to your llama-bench binary) and `SWEEP_OUTPUT_DIR` (where results are written).
+Every CLI flag has a corresponding environment variable — env vars set the default value, and CLI flags override them when both are provided. `example.env` in the repo root documents every available variable with its default value and a description. The most important ones to set are `LLAMA_BENCH_BIN` (path to your llama-bench binary) and `SWEEP_OUTPUT_DIR` (where results are written).
 
 `.env` is gitignored — your local paths and configuration will not be committed.
 ---
@@ -137,6 +137,25 @@ cmake --build build --config Release --target llama-bench -j$(nproc)
 | `--no-confirm` | Skip the pre-run confirmation prompt |
 | `--cpu-temp-limit <°C>` | Pause if CPU exceeds this temperature (default: 85) |
 | `--gpu-temp-limit <°C>` | Pause if GPU exceeds this temperature (default: 80) |
+
+---
+
+## Environment variables
+
+Every CLI flag can also be set via environment variable — useful for `.env` files so you don't repeat flags on every invocation. CLI flags always override env vars when both are set. See `example.env` for the full list with defaults and descriptions.
+
+| Variable | Equivalent flag | Example |
+|----------|----------------|---------|
+| `SWEEP_RESUME` | `--resume` | `SWEEP_RESUME=true` |
+| `SWEEP_SKIP_PHASES` | `--skip-phases` | `SWEEP_SKIP_PHASES=7` |
+| `SWEEP_ONLY_PHASES` | `--only-phases` | `SWEEP_ONLY_PHASES=0,1,6` |
+| `SWEEP_START_CTX` | `--start-ctx` | `SWEEP_START_CTX=32768` |
+| `SWEEP_MIN_CTX` | `--min-ctx` | `SWEEP_MIN_CTX=32768` |
+| `SWEEP_MIN_CTK` | `--min-ctk` | `SWEEP_MIN_CTK=q8_0` |
+| `SWEEP_START_NGL` | `--start-ngl` | `SWEEP_START_NGL=40` |
+| `SWEEP_MODEL_LIST` | `--model-list` | `SWEEP_MODEL_LIST=~/list.txt` |
+| `SWEEP_NO_CONFIRM` | `--no-confirm` | `SWEEP_NO_CONFIRM=true` |
+| `SWEEP_DRY_RUN` | `--dry-run` | `SWEEP_DRY_RUN=true` |
 
 ---
 

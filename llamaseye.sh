@@ -100,47 +100,47 @@ OUTPUT_MODEL_DIR=""          # ${SWEEP_OUTPUT_DIR}/${MODEL_STEM}/
 # CLI FLAGS — set by parse_args()
 # =============================================================================
 
-OPT_RESUME=false              # --resume: skip already-completed phases
-OPT_OVERWRITE=false           # --overwrite: nuke existing output dir
-OPT_DRY_RUN=false             # --dry-run: print commands, do not execute
-OPT_NO_CONFIRM=false          # --no-confirm: skip interactive confirmation
-OPT_NO_THERMAL=false          # --no-thermal-guard: disable wait_cool()
-OPT_ONLY_PHASES=""           # --only-phases: comma-separated phase numbers
-OPT_SKIP_PHASES=""           # --skip-phases: comma-separated phase numbers
-OPT_MODEL_LIST_FILE=""       # --model-list: path to file with one model/line
+OPT_RESUME="${SWEEP_RESUME:-false}"              # --resume / SWEEP_RESUME
+OPT_OVERWRITE="${SWEEP_OVERWRITE:-false}"        # --overwrite / SWEEP_OVERWRITE
+OPT_DRY_RUN="${SWEEP_DRY_RUN:-false}"           # --dry-run / SWEEP_DRY_RUN
+OPT_NO_CONFIRM="${SWEEP_NO_CONFIRM:-false}"      # --no-confirm / SWEEP_NO_CONFIRM
+OPT_NO_THERMAL="${SWEEP_NO_THERMAL:-false}"      # --no-thermal-guard / SWEEP_NO_THERMAL
+OPT_ONLY_PHASES="${SWEEP_ONLY_PHASES:-}"         # --only-phases / SWEEP_ONLY_PHASES
+OPT_SKIP_PHASES="${SWEEP_SKIP_PHASES:-}"         # --skip-phases / SWEEP_SKIP_PHASES
+OPT_MODEL_LIST_FILE="${SWEEP_MODEL_LIST:-}"      # --model-list / SWEEP_MODEL_LIST
 
 # --- Sweep axis start points (default: begin of list for each axis) ---
-OPT_START_NGL=""              # --start-ngl N: begin ngl sweep at this value
-OPT_START_THREADS=""          # --start-threads N: begin thread sweep at this value
-OPT_START_CTX=""              # --start-ctx N: begin context sweep at this prompt size
-OPT_START_CTK=""              # --start-ctk TYPE: begin KV quant sweep at this type
-OPT_START_B=""                # --start-b N: begin batch sweep at this b value
-OPT_START_UB=""               # --start-ub N: begin ubatch sweep at this ub value
-OPT_START_FA=""               # --start-fa 0|1: begin FA sweep at this value
+OPT_START_NGL="${SWEEP_START_NGL:-}"             # --start-ngl / SWEEP_START_NGL
+OPT_START_THREADS="${SWEEP_START_THREADS:-}"     # --start-threads / SWEEP_START_THREADS
+OPT_START_CTX="${SWEEP_START_CTX:-}"             # --start-ctx / SWEEP_START_CTX
+OPT_START_CTK="${SWEEP_START_CTK:-}"             # --start-ctk / SWEEP_START_CTK
+OPT_START_B="${SWEEP_START_B:-}"                 # --start-b / SWEEP_START_B
+OPT_START_UB="${SWEEP_START_UB:-}"               # --start-ub / SWEEP_START_UB
+OPT_START_FA="${SWEEP_START_FA:-}"               # --start-fa / SWEEP_START_FA
 
 # --- Sweep axis directions ---
 # "up"   = sweep from start toward the high end of the list
 # "down" = sweep from start toward the low end of the list
 # KV type ordering (low->high compression): f16 q8_0 q4_0 turbo4 turbo3 turbo2
-OPT_DIR_NGL="up"              # --ngl-dir up|down     (up = 0->max_ngl)
-OPT_DIR_THREADS="up"          # --threads-dir up|down (up = 1->HW_CPU_LOGICAL)
-OPT_DIR_CTX="up"              # --ctx-dir up|down     (up = 128->131072)
-OPT_DIR_CTK="up"              # --ctk-dir up|down     (up = toward more compression)
-OPT_DIR_B="up"                # --b-dir up|down       (up = 512->2048)
-OPT_DIR_UB="up"               # --ub-dir up|down      (up = 128->512)
-OPT_DIR_FA="up"               # --fa-dir up|down      (up = 0->1)
+OPT_DIR_NGL="${SWEEP_NGL_DIR:-up}"               # --ngl-dir / SWEEP_NGL_DIR       (up = 0->max_ngl)
+OPT_DIR_THREADS="${SWEEP_THREADS_DIR:-up}"       # --threads-dir / SWEEP_THREADS_DIR (up = 1->HW_CPU_LOGICAL)
+OPT_DIR_CTX="${SWEEP_CTX_DIR:-up}"               # --ctx-dir / SWEEP_CTX_DIR        (up = 128->131072)
+OPT_DIR_CTK="${SWEEP_CTK_DIR:-up}"               # --ctk-dir / SWEEP_CTK_DIR        (up = toward more compression)
+OPT_DIR_B="${SWEEP_B_DIR:-up}"                   # --b-dir / SWEEP_B_DIR            (up = 512->2048)
+OPT_DIR_UB="${SWEEP_UB_DIR:-up}"                 # --ub-dir / SWEEP_UB_DIR          (up = 128->512)
+OPT_DIR_FA="${SWEEP_FA_DIR:-up}"                 # --fa-dir / SWEEP_FA_DIR          (up = 0->1)
 
 # --- Phase 7 minimum thresholds (filter combination matrix inputs) ---
 # These trim the per-axis working sets before Phase 7. For numeric axes,
 # values strictly below the minimum are excluded. For ctk, types below
 # the minimum in quality order are excluded.
 # KV quality order (low->high): turbo2 turbo3 turbo4 q4_0 q8_0 f16
-OPT_MIN_NGL=""                # --min-ngl N
-OPT_MIN_THREADS=""            # --min-threads N
-OPT_MIN_CTX=""                # --min-ctx N
-OPT_MIN_CTK=""                # --min-ctk TYPE
-OPT_MIN_B=""                  # --min-b N
-OPT_MIN_UB=""                 # --min-ub N
+OPT_MIN_NGL="${SWEEP_MIN_NGL:-}"                 # --min-ngl / SWEEP_MIN_NGL
+OPT_MIN_THREADS="${SWEEP_MIN_THREADS:-}"         # --min-threads / SWEEP_MIN_THREADS
+OPT_MIN_CTX="${SWEEP_MIN_CTX:-}"                 # --min-ctx / SWEEP_MIN_CTX
+OPT_MIN_CTK="${SWEEP_MIN_CTK:-}"                 # --min-ctk / SWEEP_MIN_CTK
+OPT_MIN_B="${SWEEP_MIN_B:-}"                     # --min-b / SWEEP_MIN_B
+OPT_MIN_UB="${SWEEP_MIN_UB:-}"                   # --min-ub / SWEEP_MIN_UB
 
 
 # =============================================================================

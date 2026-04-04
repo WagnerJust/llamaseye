@@ -34,7 +34,7 @@ description: >
 | Default output | `~/Models/bench/sweep/` |
 | llama-bench (standard) | `~/llama.cpp/build/bin/llama-bench` |
 | llama-bench (TurboQuant) | `~/llama-cpp-turboquant/build/bin/llama-bench` |
-| llamaseye script | `~/llamaseye.sh` (SCP from local Mac if needed) |
+| llamaseye script | `~/Src/llamaseye/llamaseye.sh` (cloned via git) |
 
 **Local repo:** `/path/to/llamaseye/llamaseye.sh`
 
@@ -176,6 +176,8 @@ source .env && bash llamaseye.sh --models-dir ~/Models --output-dir ~/Models/ben
 
 ### Key variables to set
 
+> **Note:** CLI flags always override environment variables when both are set.
+
 | Variable | What it controls | Example |
 |----------|-----------------|----------|
 | `LLAMA_BENCH_BIN` | Path to the standard llama-bench binary | `~/llama.cpp/build/bin/llama-bench` |
@@ -189,7 +191,35 @@ source .env && bash llamaseye.sh --models-dir ~/Models --output-dir ~/Models/ben
 | `SWEEP_CPU_TEMP_LIMIT` | CPU °C ceiling before sweep pauses | `88` |
 | `SWEEP_GPU_TEMP_LIMIT` | GPU °C ceiling before sweep pauses | `81` |
 
-CLI flags always override environment variables when both are set.
+### Axis control variables
+
+| Variable | Equivalent flag | Default | Purpose |
+|----------|----------------|---------|---------|
+| `SWEEP_START_CTX` | `--start-ctx` | *(unset)* | Begin context sweep at this size (e.g. `32768` to skip sub-32k) |
+| `SWEEP_MIN_CTX` | `--min-ctx` | *(unset)* | Exclude context sizes below N from Phase 7 |
+| `SWEEP_MIN_CTK` | `--min-ctk` | *(unset)* | Exclude KV types below TYPE from Phase 7 (e.g. `q8_0`) |
+| `SWEEP_START_NGL` | `--start-ngl` | *(unset)* | Begin NGL sweep at this value |
+| `SWEEP_START_CTK` | `--start-ctk` | *(unset)* | Begin KV quant sweep at this type |
+| `SWEEP_NGL_DIR` | `--ngl-dir` | `up` | NGL sweep direction (`up`\|`down`) |
+| `SWEEP_CTX_DIR` | `--ctx-dir` | `up` | Context sweep direction |
+| `SWEEP_CTK_DIR` | `--ctk-dir` | `up` | KV quant sweep direction |
+| `SWEEP_SKIP_PHASES` | `--skip-phases` | *(unset)* | Skip these phases, comma-separated |
+| `SWEEP_ONLY_PHASES` | `--only-phases` | *(unset)* | Run only these phases, comma-separated |
+| `SWEEP_RESUME` | `--resume` | `false` | Skip already-completed phases |
+| `SWEEP_NO_CONFIRM` | `--no-confirm` | `false` | Skip pre-sweep confirmation |
+| `SWEEP_MODEL_LIST` | `--model-list` | *(unset)* | Path to model list file |
+| `SWEEP_MIN_NGL` | `--min-ngl` | *(unset)* | Exclude NGL values below N from Phase 7 |
+| `SWEEP_MIN_THREADS` | `--min-threads` | *(unset)* | Exclude thread counts below N from Phase 7 |
+| `SWEEP_MIN_B` | `--min-b` | *(unset)* | Exclude batch sizes below N from Phase 7 |
+| `SWEEP_MIN_UB` | `--min-ub` | *(unset)* | Exclude ubatch sizes below N from Phase 7 |
+| `SWEEP_START_THREADS` | `--start-threads` | *(unset)* | Begin thread sweep at this value |
+| `SWEEP_START_B` | `--start-b` | *(unset)* | Begin batch sweep at this value |
+| `SWEEP_START_UB` | `--start-ub` | *(unset)* | Begin ubatch sweep at this value |
+| `SWEEP_START_FA` | `--start-fa` | *(unset)* | Begin FA sweep at this value (0\|1) |
+| `SWEEP_FA_DIR` | `--fa-dir` | `up` | FA sweep direction |
+| `SWEEP_THREADS_DIR` | `--threads-dir` | `up` | Thread sweep direction |
+| `SWEEP_B_DIR` | `--b-dir` | `up` | Batch sweep direction |
+| `SWEEP_UB_DIR` | `--ub-dir` | `up` | Ubatch sweep direction |
 
 ---
 
