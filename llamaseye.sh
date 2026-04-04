@@ -2425,12 +2425,37 @@ phase7_combination_matrix() {
     ctx_p7="$(apply_phase7_mins "ctx"     "$(echo "${WS_CTX}" | tr ' ' '\n')"     "${eff_min_ctx}")"
     nkvo_p7="$(echo "${WS_NKVO}" | tr ' ' '\n' | grep -v '^$' || true)"
 
-    # KV type: default to q8_0 (int8) minimum — exclude heavily-compressed types
-    # unless the user explicitly asks for them or lowers the bar.
+    # KV type minimum: auto-derive from Phase 6 stop reason when not explicitly set.
+    # - Phase 6 hit OOM  → turbo compression may unlock larger contexts → open to lowest
+    #                       validated ctk type (could be turbo2 if TurboQuant available)
+    # - Phase 6 timed out or reached 131072 cleanly → throughput-limited, not VRAM-limited
+    #                       → turbo won't help, keep q8_0 default
     local eff_min_ctk="${OPT_MIN_CTK}"
     if [[ -z "${eff_min_ctk}" ]]; then
-        eff_min_ctk="q8_0"
-        log "[Phase 7] Auto min-ctk=${eff_min_ctk} (default minimum quality; override with --min-ctk TYPE or SWEEP_MIN_CTK=TYPE)"
+        local _p6_oom_count
+        _p6_oom_count="$(jq -s '[.[] | select(.phase==6 and .status=="oom")] | length' \
+            "${OUTPUT_MODEL_DIR}/sweep.jsonl" 2>/dev/null || echo 0)"
+        if [[ "${_p6_oom_count}" -gt 0 ]]; then
+            # OOM ceiling: find the most-compressed ctk type Phase 2 validated
+            local _auto_ctk
+            _auto_ctk="$(jq -rs '
+                def rank: {"turbo2":0,"turbo3":1,"turbo4":2,"q4_0":3,"q8_0":4,"f16":5}[.] // 99;
+                [.[] | select(.phase==2 and .status=="ok") | .params.ctk] |
+                unique | sort_by(rank) | .[0] // "q4_0"
+            ' "${OUTPUT_MODEL_DIR}/sweep.jsonl" 2>/dev/null || echo "q4_0")"
+            eff_min_ctk="${_auto_ctk}"
+            log "[Phase 7] Auto min-ctk=${eff_min_ctk} (Phase 6 hit OOM — turbo may unlock larger contexts; override with --min-ctk)"
+        else
+            local _p6_timeout_count
+            _p6_timeout_count="$(jq -s '[.[] | select(.phase==6 and .status=="timeout")] | length' \
+                "${OUTPUT_MODEL_DIR}/sweep.jsonl" 2>/dev/null || echo 0)"
+            eff_min_ctk="q8_0"
+            if [[ "${_p6_timeout_count}" -gt 0 ]]; then
+                log "[Phase 7] Auto min-ctk=${eff_min_ctk} (Phase 6 stopped on timeout — turbo won't unlock more context; override with --min-ctk)"
+            else
+                log "[Phase 7] Auto min-ctk=${eff_min_ctk} (Phase 6 reached max context cleanly; override with --min-ctk TYPE or SWEEP_MIN_CTK=TYPE)"
+            fi
+        fi
     fi
 
     local ctk_values

@@ -713,7 +713,7 @@ is logged at startup so the operator can see exactly what is active:
 | `ngl` | `max_ngl − 1 step` (top 2 ngl values) | `--min-ngl 0` |
 | `threads` | `HW_CPU_PHYSICAL` (physical core count) | `--min-threads 1` |
 | `ctx` | `--start-ctx` value if set, else `8192` | `--min-ctx 0` |
-| `ctk` | `q8_0` | `--min-ctk q4_0` |
+| `ctk` | `q8_0` when Phase 6 stopped cleanly or on timeout; auto-lowered to most-compressed Phase-2-validated type when Phase 6 hit OOM (turbo if available, else `q4_0`) | `--min-ctk q8_0` to force default |
 | `b` | `BEST_B / 2` | `--min-b 512` |
 
 These auto-defaults do not affect phases 1–6 — those still run full discovery.
