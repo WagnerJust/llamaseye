@@ -759,9 +759,9 @@ setup_output_dir() {
         if $OPT_OVERWRITE; then
             rm -rf "${OUTPUT_MODEL_DIR}"
             log "Overwrite: removed existing output dir"
-        elif ! $OPT_RESUME; then
+        elif ! $OPT_RESUME && [[ -z "${OPT_ONLY_PHASES}" ]]; then
             die "Output dir already exists: ${OUTPUT_MODEL_DIR}
-  Use --resume to continue an existing sweep, or --overwrite to start fresh."
+  Use --resume to continue an existing sweep, --only-phases to re-run specific phases, or --overwrite to start fresh."
         fi
     fi
     mkdir -p "${OUTPUT_MODEL_DIR}/raw"
