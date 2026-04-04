@@ -2221,10 +2221,14 @@ sweep_model() {
                 continue
             fi
         fi
-        # Resume: skip completed phases
+        # Resume: skip completed phases, unless explicitly requested via --only-phases
         if echo " ${PHASES_COMPLETE} " | grep -q " ${phase} "; then
-            log "[Phase ${phase}] Already complete — skipping (--resume)"
-            continue
+            if [[ -n "${OPT_ONLY_PHASES}" ]] && echo ",${OPT_ONLY_PHASES}," | grep -q ",${phase},"; then
+                log "[Phase ${phase}] Already complete — re-running (explicitly requested via --only-phases)"
+            else
+                log "[Phase ${phase}] Already complete — skipping (--resume)"
+                continue
+            fi
         fi
 
         case "${phase}" in
