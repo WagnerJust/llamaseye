@@ -805,22 +805,25 @@ save_state() {
         fi
     fi
 
-    # Build phases array JSON
+    # Build phases array JSON — jq -Rnc '[inputs|tonumber]' always emits [] on empty input
     local phases_json
-    phases_json="$(echo "${PHASES_COMPLETE}" | tr ' ' '\n' | grep -v '^$' | jq -R . | jq -sc . || echo '[]')"
+    phases_json="$(echo "${PHASES_COMPLETE}" | tr ' ' '\n' | grep -v '^$' | jq -Rnc '[inputs | tonumber]' 2>/dev/null || echo '[]')"
 
     # Build working sets JSON
     local ngl_json thread_json nkvo_json ctx_json fa_ctk_json b_ub_json
-    ngl_json="$(echo "${WS_NGL}" | tr ' ' '\n' | grep -v '^$' | jq -R 'tonumber' | jq -sc . || echo '[]')"
-    thread_json="$(echo "${WS_THREADS}" | tr ' ' '\n' | grep -v '^$' | jq -R 'tonumber' | jq -sc . || echo '[]')"
-    nkvo_json="$(echo "${WS_NKVO}" | tr ' ' '\n' | grep -v '^$' | jq -R 'tonumber' | jq -sc . || echo '[]')"
-    ctx_json="$(echo "${WS_CTX}" | tr ' ' '\n' | grep -v '^$' | jq -R 'tonumber' | jq -sc . || echo '[]')"
+    ngl_json="$(echo "${WS_NGL}"     | tr ' ' '\n' | grep -v '^$' | jq -Rnc '[inputs | tonumber]' 2>/dev/null || echo '[]')"
+    nkvo_json="$(echo "${WS_NKVO}"  | tr ' ' '\n' | grep -v '^$' | jq -Rnc '[inputs | tonumber]' 2>/dev/null || echo '[]')"
+    ctx_json="$(echo "${WS_CTX}"    | tr ' ' '\n' | grep -v '^$' | jq -Rnc '[inputs | tonumber]' 2>/dev/null || echo '[]')"
+    # Threads can contain "system_default" so keep as strings
+    thread_json="$(echo "${WS_THREADS}" | tr ' ' '\n' | grep -v '^$' | jq -Rnc '[inputs]' 2>/dev/null || echo '[]')"
     fa_ctk_json="$(echo "${WS_FA_CTK}" | grep -v '^$' | while read -r fa ctk ctv; do
         jq -cn --argjson fa "${fa}" --arg ctk "${ctk}" --arg ctv "${ctv}" '{fa:$fa,ctk:$ctk,ctv:$ctv}'
-    done | jq -sc . || echo '[]')"
+    done | jq -sc '.' 2>/dev/null || echo '[]')"
+    [[ -z "${fa_ctk_json}" ]] && fa_ctk_json="[]"
     b_ub_json="$(echo "${WS_B_UB}" | grep -v '^$' | while read -r b ub; do
         jq -cn --argjson b "${b}" --argjson ub "${ub}" '{b:$b,ub:$ub}'
-    done | jq -sc . || echo '[]')"
+    done | jq -sc '.' 2>/dev/null || echo '[]')"
+    [[ -z "${b_ub_json}" ]] && b_ub_json="[]"
 
     jq -n \
         --arg model_path "${MODEL_PATH}" \
