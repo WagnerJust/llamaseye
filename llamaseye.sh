@@ -1803,7 +1803,12 @@ apply_phase7_mins() {
         local val
         while IFS= read -r val; do
             [[ -z "${val}" ]] && continue
-            (( val >= min_val )) && echo "${val}" || true
+            # "system_default" is a sentinel meaning "no -t flag"; always passes numeric filters
+            if [[ "${val}" == "system_default" ]]; then
+                echo "${val}"
+            else
+                (( val >= min_val )) && echo "${val}" || true
+            fi
         done <<< "${values}"
     fi
 }
