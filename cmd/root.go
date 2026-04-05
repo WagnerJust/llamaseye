@@ -13,7 +13,8 @@ import (
 )
 
 // Parse parses command-line arguments into a Config.
-func Parse(args []string) (*config.Config, []string, error) {
+// version is injected from main so the --help banner reflects the build version.
+func Parse(args []string, version string) (*config.Config, []string, error) {
 	cfg := config.Defaults()
 	fs := flag.NewFlagSet("llamaseye", flag.ContinueOnError)
 
@@ -91,7 +92,7 @@ func Parse(args []string) (*config.Config, []string, error) {
 	fs.String("env-file", "", `Load environment variables from FILE before flag parsing (default: auto-load ".env" if present)`)
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "llamaseye v0.1.0 — exhaustive llama-bench parameter sweep harness\n\n")
+		fmt.Fprintf(os.Stderr, "llamaseye %s — exhaustive llama-bench parameter sweep harness\n\n", version)
 		fmt.Fprintf(os.Stderr, "Usage: llamaseye [options]\n\n")
 		fs.PrintDefaults()
 	}

@@ -15,6 +15,9 @@ import (
 	"github.com/WagnerJust/llamaseye/sweep"
 )
 
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z"
+var version = "dev"
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "llamaseye: %v\n", err)
@@ -37,7 +40,15 @@ func run(args []string) error {
 		}
 	}
 
-	cfg, models, err := cmd.Parse(args)
+	// Handle --version before full flag parsing
+	for _, a := range args {
+		if a == "--version" || a == "-version" {
+			fmt.Printf("llamaseye %s\n", version)
+			return nil
+		}
+	}
+
+	cfg, models, err := cmd.Parse(args, version)
 	if err != nil {
 		return err
 	}
