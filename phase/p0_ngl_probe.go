@@ -23,7 +23,13 @@ func (P0NGLProbe) Run(ctx context.Context, env *PhaseEnv) error {
 		return nil
 	}
 
-	for ngl := 99; ngl >= 0; ngl -= 4 {
+	startNGL := 99
+	if env.NumLayers > 0 && env.NumLayers < 99 {
+		startNGL = env.NumLayers
+		env.Logger.Log("[Phase 0] GGUF: %d layers — starting probe at ngl=%d", env.NumLayers, startNGL)
+	}
+
+	for ngl := startNGL; ngl >= 0; ngl -= 4 {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

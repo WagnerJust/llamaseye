@@ -106,6 +106,29 @@ func TestP0NGLProbe_NoGPU(t *testing.T) {
 	}
 }
 
+func TestP0NGLProbe_CapsAtNumLayers(t *testing.T) {
+	// Model has 36 layers — Phase 0 should probe at 36, not 99.
+	responses := []phaseResponse{
+		{stdout: okOutput(), exitCode: 0}, // first probe (ngl=36) succeeds
+	}
+	exec := &mockPhaseExecutor{responses: responses}
+	env := newTestEnv(t, exec)
+	env.NumLayers = 36
+
+	p := P0NGLProbe{}
+	if err := p.Run(context.Background(), env); err != nil {
+		t.Fatalf("P0: %v", err)
+	}
+	// Should succeed at 36 on the first try (no wasted probes at 99, 95, ...)
+	if env.MaxNGL != 36 {
+		t.Errorf("MaxNGL = %d, want 36 (capped at NumLayers)", env.MaxNGL)
+	}
+	// Only 1 call should have been made
+	if exec.idx != 1 {
+		t.Errorf("expected 1 probe call, got %d", exec.idx)
+	}
+}
+
 func TestP0NGLProbe_FindsMax(t *testing.T) {
 	// OOM at 99, 95, then success at 91
 	responses := []phaseResponse{
@@ -141,6 +164,32 @@ func TestP1NGLSweep_BuildsWorkingSet(t *testing.T) {
 	}
 	if len(env.WS.NGL) == 0 {
 		t.Error("expected non-empty WS.NGL")
+	}
+}
+
+func TestP1NGLSweep_CapsAtNumLayers(t *testing.T) {
+	// MaxNGL=32 (from Phase 0) but model only has 10 layers.
+	// Phase 1 sweep should stop at 10, not 32.
+	exec := &mockPhaseExecutor{} // all OK
+	env := newTestEnv(t, exec)
+	env.MaxNGL = 32
+	env.NumLayers = 10
+	env.Config.NGLStep = 4
+	env.Config.StartNGL = intPtr(0) // full sweep from 0
+
+	p := P1NGLSweep{}
+	if err := p.Run(context.Background(), env); err != nil {
+		t.Fatalf("P1: %v", err)
+	}
+	// No NGL value in the working set should exceed NumLayers
+	for _, ngl := range env.WS.NGL {
+		if ngl > env.NumLayers {
+			t.Errorf("WS.NGL contains %d which exceeds NumLayers=%d", ngl, env.NumLayers)
+		}
+	}
+	// Call count should be for [0,4,8,10] = 4 runs, not [0,4,...,32] = 9 runs
+	if exec.idx > 5 {
+		t.Errorf("expected ≤5 bench calls (capped at NumLayers=10), got %d", exec.idx)
 	}
 }
 

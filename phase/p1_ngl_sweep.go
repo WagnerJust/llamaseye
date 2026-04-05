@@ -17,13 +17,22 @@ func (P1NGLSweep) Run(ctx context.Context, env *PhaseEnv) error {
 	step := env.Config.NGLStep
 	env.Logger.Log("[Phase 1] NGL axis sweep (step=%d)", step)
 
-	// Build full NGL list: 0, step, 2*step, ..., MAX_NGL
+	// Cap the sweep ceiling: NGL values above NumLayers are functionally identical
+	// because llama.cpp silently clamps NGL to the model's actual layer count.
+	nglCeiling := env.MaxNGL
+	if env.NumLayers > 0 && env.NumLayers < env.MaxNGL {
+		nglCeiling = env.NumLayers
+		env.Logger.Log("[Phase 1] Model has %d layers — capping NGL sweep at %d (values above are identical)",
+			env.NumLayers, nglCeiling)
+	}
+
+	// Build full NGL list: 0, step, 2*step, ..., nglCeiling
 	var fullList []int
 	fullList = append(fullList, 0)
-	for n := step; n < env.MaxNGL; n += step {
+	for n := step; n < nglCeiling; n += step {
 		fullList = append(fullList, n)
 	}
-	fullList = append(fullList, env.MaxNGL)
+	fullList = append(fullList, nglCeiling)
 	fullList = dedupeInts(fullList)
 
 	// Smart default start: 2 steps below MAX_NGL

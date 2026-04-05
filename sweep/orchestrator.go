@@ -10,6 +10,7 @@ import (
 
 	"github.com/justinphilpott/llamaseye/bench"
 	"github.com/justinphilpott/llamaseye/config"
+	"github.com/justinphilpott/llamaseye/gguf"
 	"github.com/justinphilpott/llamaseye/hardware"
 	"github.com/justinphilpott/llamaseye/output"
 	"github.com/justinphilpott/llamaseye/phase"
@@ -78,6 +79,15 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 	// Build PhaseEnv
 	env := phase.NewPhaseEnv(s.Config, s.HW, runner, thermal, s.Logger,
 		outputDir, modelPath, modelStem)
+
+	// Parse GGUF metadata to cap NGL at the model's actual layer count.
+	// Values above NumLayers are functionally identical (llama.cpp clamps silently).
+	if meta, err := gguf.Parse(modelPath); err == nil && meta.NumLayers > 0 {
+		env.NumLayers = meta.NumLayers
+		s.Logger.Log("[GGUF] %d layers, %s architecture", meta.NumLayers, meta.Architecture)
+	} else if err != nil {
+		s.Logger.Log("[GGUF] Could not parse metadata (%v) — NGL ceiling defaults to 99", err)
+	}
 
 	// Load existing state if available
 	var phasesComplete []int
