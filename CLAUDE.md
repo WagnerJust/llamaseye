@@ -118,3 +118,13 @@ Every CLI flag has a matching `SWEEP_*` environment variable. CLI flags always o
 3. `skills/llamaseye/SKILL.md` — skill doc used by the Claude Code agent
 
 Update all three in the same branch/PR as the code change. Do not merge a code PR without the doc updates.
+
+## Changelog and versioning rule
+
+**Every commit must include a `CHANGELOG.md` entry with a semver bump.** Follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format and [Semantic Versioning](https://semver.org/):
+
+- **Patch** (`x.y.Z`) — removals, cleanup, docs, bug fixes
+- **Minor** (`x.Y.0`) — new features, new flags, new phases
+- **Major** (`X.0.0`) — breaking changes to CLI flags, output format, or JSONL schema
+
+No commit should land on `main` without a corresponding version entry.
