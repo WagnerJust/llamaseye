@@ -122,7 +122,7 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 	// Build goal config
 	var goal *phase.GoalConfig
 	if s.Config.Goal != "" {
-		goal = parseGoal(s.Config.Goal)
+		goal = parseGoal(s.Config.Goal, s.Config.GoalTargetCount)
 	}
 
 	// Define all phases
@@ -172,7 +172,7 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 	}
 
 	// Generate markdown
-	if err := output.GenerateMarkdown(outputDir, modelStem, s.Config.Goal, s.Config.TimeoutSec); err != nil {
+	if err := output.GenerateMarkdown(outputDir, modelStem, s.Config.Goal, s.Config.GoalSort, s.Config.TimeoutSec); err != nil {
 		s.Logger.Warn("generate markdown: %v", err)
 	}
 
@@ -203,7 +203,7 @@ func (s *Sweeper) ReportMode(stems []string) error {
 	}
 	for _, stem := range stems {
 		dir := filepath.Join(s.Config.OutputDir, stem)
-		if err := output.GenerateMarkdown(dir, stem, s.Config.Goal, s.Config.TimeoutSec); err != nil {
+		if err := output.GenerateMarkdown(dir, stem, s.Config.Goal, s.Config.GoalSort, s.Config.TimeoutSec); err != nil {
 			s.Logger.Warn("generate markdown for %s: %v", stem, err)
 			continue
 		}
@@ -240,8 +240,11 @@ func appendUnique(s []int, v int) []int {
 	return append(s, v)
 }
 
-func parseGoal(spec string) *phase.GoalConfig {
-	g := &phase.GoalConfig{MaxHits: 3}
+func parseGoal(spec string, hits int) *phase.GoalConfig {
+	if hits <= 0 {
+		hits = 3
+	}
+	g := &phase.GoalConfig{MaxHits: hits}
 	for _, part := range strings.Split(spec, ",") {
 		part = strings.TrimSpace(part)
 		kv := strings.SplitN(part, "=", 2)

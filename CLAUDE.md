@@ -115,7 +115,7 @@ Every CLI flag has a matching `SWEEP_*` environment variable. CLI flags always o
 **Every PR that changes behaviour must also update:**
 1. `README.md` — user-facing description of affected phases, flags, or output
 2. `docs/spec.md` — engineering spec (JSONL schema, phase behaviour, output format)
-3. `skills/llamaseye/SKILL.md` — skill doc used by the Claude Code agent
+3. `.claude/skills/llamaseye/SKILL.md` — skill doc used by the Claude Code agent
 
 Update all three in the same branch/PR as the code change. Do not merge a code PR without the doc updates.
 

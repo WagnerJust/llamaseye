@@ -1101,6 +1101,8 @@ These variables were previously CLI-only but are now also read from the environm
 | `SWEEP_NO_CONFIRM` | `false` | Skip pre-sweep confirmation prompt (`--no-confirm`) |
 | `SWEEP_NO_THERMAL` | `false` | Disable thermal polling entirely (`--no-thermal-guard`) |
 | `SWEEP_DEBUG` | `false` | Enable verbose `[DEBUG]` log output (`--debug`) |
+| `SWEEP_GOAL_HITS` | `3` | Distinct (ngl,ctk,nkvo,ctx) configs before goal early-exit (`--goal-hits`) |
+| `SWEEP_GOAL_SORT` | `tg` | Goal Results table sort axis: tg, ctx, ngl, pp (`--goal-sort`) |
 | `SWEEP_ONLY_PHASES` | *(unset)* | Run only these phases, comma-separated (`--only-phases`) |
 | `SWEEP_SKIP_PHASES` | *(unset)* | Skip these phases, comma-separated (`--skip-phases`) |
 | `SWEEP_MODEL_LIST` | *(unset)* | Path to model list file (`--model-list`) |
@@ -1306,6 +1308,13 @@ Utility:
                              command lines, raw stdout/stderr per run, OOM match strings,
                              thermal poll results, and GGUF metadata fields.
                              Env: SWEEP_DEBUG=true
+  --goal-hits N              Stop goal mode after N distinct (ngl,ctk,nkvo,ctx) tuples
+                             are validated. Tuning variants (threads/b/ub) that differ
+                             only in performance knobs do not count as new hits.
+                             Default: 3. Env: SWEEP_GOAL_HITS=N
+  --goal-sort tg|ctx|ngl|pp  Sort the Goal Results table in sweep.md by this axis,
+                             descending. TG is used as a tiebreaker.
+                             Default: tg. Env: SWEEP_GOAL_SORT=ctx
   Axis start points & directions:
   --start-ngl N         Begin ngl sweep at N (skips values before N in sweep direction).
   --ngl-dir up|down     ngl sweep direction: up=0→max, down=max→0. Default: up.

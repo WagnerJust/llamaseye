@@ -61,10 +61,10 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 		return nil
 	}
 
-	// Goal mode: sort NGL descending
+	// Goal mode: sort NGL descending so best offload configs surface first
 	if p.Goal != nil {
 		sortIntsDesc(nglP7)
-		env.Logger.Log("[Phase 7] Goal mode: ctx≥%d tg≥%.1f pp≥%.1f — stopping after %d validated configs",
+		env.Logger.Log("[Phase 7] Goal mode: ctx≥%d tg≥%.1f pp≥%.1f — stopping after %d distinct (ngl,ctk,nkvo,ctx) configs",
 			p.Goal.CtxMin, p.Goal.TGMin, p.Goal.PPMin, p.Goal.MaxHits)
 	}
 
@@ -80,6 +80,9 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 	runCount := 0
 	goalHits := 0
 	goalDone := false
+	// goalTuples tracks best TG seen per (ngl,ctk,nkvo,ctx) key.
+	// A new hit is only counted when a key is seen for the first time.
+	goalTuples := make(map[string]float64)
 
 	for _, ngl := range nglP7 {
 		if goalDone {
@@ -181,12 +184,22 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 									meetsGoal = false
 								}
 								if meetsGoal {
-									goalHits++
-									env.Logger.Log("[Phase 7] Goal met (%d/%d): ngl=%d ctk=%s nkvo=%d ctx=%d",
-										goalHits, p.Goal.MaxHits, ngl, factkCombo.CTK, nkvo, ctxVal)
-									if goalHits >= p.Goal.MaxHits {
-										env.Logger.Log("[Phase 7] Goal satisfied — stopping early after %d combinations", runCount)
-										goalDone = true
+									tupleKey := fmt.Sprintf("%d_%s_%d_%d", ngl, factkCombo.CTK, nkvo, ctxVal)
+									if _, seen := goalTuples[tupleKey]; !seen {
+										// New distinct (ngl,ctk,nkvo,ctx) combo
+										goalHits++
+										goalTuples[tupleKey] = tg
+										env.Logger.Log("[Phase 7] Goal hit (%d/%d): ngl=%d ctk=%s nkvo=%d ctx=%d tg=%.2f t/s",
+											goalHits, p.Goal.MaxHits, ngl, factkCombo.CTK, nkvo, ctxVal, tg)
+										if goalHits >= p.Goal.MaxHits {
+											env.Logger.Log("[Phase 7] Goal satisfied — stopping early after %d combinations", runCount)
+											goalDone = true
+										}
+									} else if tg > goalTuples[tupleKey] {
+										// Same tuple, better tuning result — update best but don't count again
+										goalTuples[tupleKey] = tg
+										env.Logger.Debugf("[Phase 7] Goal tuple ngl=%d ctk=%s nkvo=%d ctx=%d improved: %.2f→%.2f t/s",
+											ngl, factkCombo.CTK, nkvo, ctxVal, goalTuples[tupleKey], tg)
 									}
 								}
 							}
@@ -198,7 +211,7 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 	}
 
 	if p.Goal != nil {
-		env.Logger.Log("[Phase 7] Complete — %d combinations run, %d/%d goal configs found",
+		env.Logger.Log("[Phase 7] Complete — %d combinations run, %d/%d distinct goal configs found",
 			runCount, goalHits, p.Goal.MaxHits)
 	} else {
 		env.Logger.Log("[Phase 7] Complete — %d combinations run", runCount)

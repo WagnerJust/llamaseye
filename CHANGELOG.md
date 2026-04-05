@@ -6,6 +6,18 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.2.0] — 2026-04-05
+
+### Changed
+- `--goal` mode now counts hits by distinct **(ngl, ctk, nkvo, ctx)** tuples instead of raw run count. Tuning variants (threads/b/ub) that differ only in performance knobs no longer inflate the hit count — each unique trade-off decision counts as one hit.
+- Goal Results section in `sweep.md` deduplicated to one row per tuple (best TG wins), with the key trade-off axes leading the columns.
+
+### Added
+- `--goal-hits N` flag and `SWEEP_GOAL_HITS` env var to control how many distinct goal configs trigger early exit (default: 3, was previously hardcoded).
+- `--goal-sort` flag and `SWEEP_GOAL_SORT` env var to control Goal Results table sort order: `tg` (default), `ctx`, `ngl`, `pp` — all descending, TG used as tiebreaker.
+
+---
+
 ## [1.1.0] — 2026-04-05
 
 ### Added

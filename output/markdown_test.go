@@ -20,7 +20,7 @@ func TestGenerateMarkdown_Basic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := GenerateMarkdown(dir, "m", "", 600); err != nil {
+	if err := GenerateMarkdown(dir, "m", "", "tg", 600); err != nil {
 		t.Fatalf("GenerateMarkdown: %v", err)
 	}
 
@@ -54,7 +54,7 @@ func TestGenerateMarkdown_EmptyJSONL(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "sweep.jsonl"), []byte{}, 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := GenerateMarkdown(dir, "m", "", 600); err != nil {
+	if err := GenerateMarkdown(dir, "m", "", "tg", 600); err != nil {
 		t.Fatalf("GenerateMarkdown on empty: %v", err)
 	}
 }
@@ -62,7 +62,7 @@ func TestGenerateMarkdown_EmptyJSONL(t *testing.T) {
 func TestGenerateMarkdown_NoFile(t *testing.T) {
 	dir := t.TempDir()
 	// No sweep.jsonl — should be no-op
-	if err := GenerateMarkdown(dir, "m", "", 600); err != nil {
+	if err := GenerateMarkdown(dir, "m", "", "tg", 600); err != nil {
 		t.Fatalf("GenerateMarkdown on no file: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "sweep.md")); err == nil {
@@ -174,7 +174,7 @@ func TestGenerateMarkdown_WithGoal(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "sweep.jsonl"), []byte(jsonl), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := GenerateMarkdown(dir, "m", "ctx=4096,tg=20.0", 600); err != nil {
+	if err := GenerateMarkdown(dir, "m", "ctx=4096,tg=20.0", "tg", 600); err != nil {
 		t.Fatalf("GenerateMarkdown with goal: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "sweep.md"))
