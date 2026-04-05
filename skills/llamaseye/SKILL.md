@@ -81,6 +81,7 @@ tail -f ~/Models/bench/sweep/sweep.log
 | Skip Phase 7 | `--skip-phases 7` |
 | All models in a dir | `--models-dir <dir>` |
 | Curated model subset | `--model-list ~/list.txt` |
+| Regenerate sweep.md without re-running | `--report --output-dir <dir>` |
 | TurboQuant KV types | `--turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench` |
 | Start NGL sweep mid-range | `--start-ngl 40` |
 | NGL sweep downward from a known point | `--start-ngl 60 --ngl-dir down` |
@@ -146,11 +147,18 @@ jq -s '[.[] | select(.status=="ok")] | sort_by(-.results[1].avg_ts) | .[:5]' swe
 jq -s '[.[] | select(.status=="ok" and .params.n_gen==0)] | sort_by(-.params.n_prompt) | .[0]' sweep.jsonl
 ```
 
-`sweep.md` contains one table per phase, sorted by TG t/s descending, plus a **Context Frontier**
-table in the Phase 7 section showing max successful context per (ngl, ctk, nkvo) triple.
+`sweep.md` sections:
+- **Best Configurations** — top 10 results across all phases ranked by TG t/s (answer to "what's the best config?")
+- **Per-phase tables** — all runs for each phase, sorted by TG t/s descending, with a `> **Winner:**` callout
+- **Context Frontier** (Phase 7) — max successful context per (ngl, ctk, nkvo) triple
+- **Slow context** — Phase 6 sizes that timed out (achievable but slow)
+
+Regenerate `sweep.md` at any time without re-running: `bash llamaseye.sh --report --output-dir <dir>`
+
+Multi-model runs also produce `<output-dir>/summary.md` — one row per model, sorted by best TG t/s.
 
 **What to look for:**
-1. **Best TG t/s** — highest token generation speed; check Phase 7 combo rows first
+1. **Best TG t/s** — check the "Best Configurations" table at the top of sweep.md first
 2. **Context frontier** — the largest `n_prompt` value that completed without OOM
 3. **`viable` flag** — `true` when TG avg_ts ≥ 2.0 t/s (usable for interactive inference)
 4. **NGL sweet spot** — Phase 1 table shows where adding more GPU layers stops helping
