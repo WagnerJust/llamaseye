@@ -4,48 +4,62 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**llamaseye** is a single-file Bash script (`llamaseye.sh`) that exhaustively benchmarks every meaningful llama-bench parameter combination for GGUF models. There is no build step — the entry point is the script itself.
+**llamaseye** is a Go binary that exhaustively benchmarks every meaningful llama-bench parameter combination for GGUF models. Build with `go build .` or `make build`.
 
-## Running the script
+## Building and running
 
 ```bash
+# Build
+go build -o llamaseye .
+
 # Single model
-bash llamaseye.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ./results
+./llamaseye --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ./results
 
 # All models in a directory
-bash llamaseye.sh --models-dir ~/Models --output-dir ./results
+./llamaseye --models-dir ~/Models --output-dir ./results
 
 # From a model list file (one filename per line, # comments supported)
-bash llamaseye.sh --models-dir ~/Models --model-list my_models.txt --output-dir ./results
+./llamaseye --models-dir ~/Models --model-list my_models.txt --output-dir ./results
 
-# Auto-derive start-ngl and start-ctx from GGUF metadata (requires python3)
-bash llamaseye.sh --model ~/Models/model.gguf --optimized-sweep
+# Auto-derive start-ngl and start-ctx from GGUF metadata
+./llamaseye --model ~/Models/model.gguf --optimized-sweep
 
 # Resume an interrupted sweep
-bash llamaseye.sh --model ~/Models/model.gguf --resume
+./llamaseye --model ~/Models/model.gguf --resume
 
 # Run only specific phases (e.g. re-run context and combo matrix)
-bash llamaseye.sh --model ~/Models/model.gguf --only-phases 6,7
+./llamaseye --model ~/Models/model.gguf --only-phases 6,7
 
 # Dry run (print commands without executing)
-bash llamaseye.sh --model ~/Models/model.gguf --dry-run
+./llamaseye --model ~/Models/model.gguf --dry-run
 ```
 
 **Environment / .env file:**
 ```bash
 cp example.env .env
 # Edit .env, then:
-source .env && bash llamaseye.sh --models-dir ~/Models
+./llamaseye --models-dir ~/Models
 ```
-`.env` is gitignored. `example.env` documents every available variable with defaults.
+`.env` is auto-loaded from the working directory if present. `.env` is gitignored. `example.env` documents every available variable with defaults.
+
+## Package layout
+
+```
+llamaseye/
+  main.go          # Entry point: env loading, hardware detection, model loop
+  cmd/root.go      # CLI flag definitions (pflag), env/CLI merge, model resolution
+  config/          # Config struct, defaults, validation
+  hardware/        # HardwareInfo detection (darwin/linux), thermal polling
+  gguf/            # Pure-Go GGUF metadata reader + NGL/context ceiling prediction
+  bench/           # BenchRunner, OOM detection, binary selection (turbo vs standard)
+  phase/           # One file per phase (p0–p7), shared PhaseEnv state
+  sweep/           # Sweeper orchestrator: SweepModel(), ReportMode()
+  output/          # Logger, JSONL append, Markdown summary generation
+  state/           # state.json serialization for --resume
+  envfile/         # .env file loader
+```
 
 ## Architecture
-
-The script is structured in three logical sections at the top of the file:
-
-1. **Configuration variables** — all `SWEEP_*` / `LLAMA_BENCH_BIN` defaults, each overridable by env var or CLI flag
-2. **Runtime state** — `HW_*` hardware inventory, `BEST_*` current best-per-axis values, `WS_*` per-phase working sets
-3. **Functions** — all logic is in functions; `main()` at the bottom orchestrates everything
 
 ### Sweep phases (0–7)
 
@@ -62,20 +76,19 @@ Each phase sweeps **exactly one axis** while holding all other parameters at fix
 | 6 | Context ceiling | Prompt size 128 → 131072, stops at OOM; on OOM auto-retries with nkvo flip then more-compressed ctk types |
 | 7 | Combo matrix | Cartesian product of all working values from phases 1–6 |
 
-Phases 1–6 each populate a `WS_*` working set variable. Phase 7 takes the cartesian product of all of them.
+Phases 1–6 each populate a working set in `PhaseEnv`. Phase 7 takes the cartesian product of all of them.
 
 Phase 6 fallback order on OOM: (1) flip `nkvo`, (2) try progressively more-compressed `ctk` types × both `nkvo` values. Only ctk/nkvo values already validated by Phases 2 and 4 are tried as fallbacks.
 
-### Key functions to know
+### Key packages and types
 
-- `detect_hardware()` — probes CPU cores, RAM, VRAM, backend (`cuda`/`metal`/`cpu`), thermal sensors. Sets all `HW_*` vars. Runs once per model.
-- `analyze_model()` — when `--optimized-sweep` is active, parses GGUF metadata via an inline Python3 script to predict max NGL and best context ceiling, then sets `OPT_START_NGL` and `OPT_START_CTX`. Architecture-agnostic via `general.architecture`. Cannot be combined with any `--start-*` or `--min-*` flag.
-- `detect_turbo_binary()` — validates the optional TurboQuant llama-bench binary.
-- `run_bench()` — the core invocation: calls `timeout + llama-bench`, captures output, appends JSONL to `sweep.jsonl`, detects OOM/timeout.
-- `detect_oom()` — pattern matches stderr for OOM strings ("CUDA out of memory", "failed to allocate", etc.).
-- `save_state()` / `load_state()` — serialize/deserialize `state.json` for `--resume`.
-- `wait_cool()` — polls CPU/GPU temperature; pauses the sweep if thermal limits are exceeded.
-- `phase_N_*()` — one function per phase, e.g. `phase_1_ngl_sweep()`, `phase_7_combination_matrix()`.
+- `hardware.Detect()` — probes CPU cores, RAM, VRAM, backend (`cuda`/`metal`/`cpu`), thermal sensors. Returns `*HardwareInfo`.
+- `gguf.Predict()` — parses GGUF metadata to predict max NGL and best context ceiling when `--optimized-sweep` is active.
+- `bench.BenchRunner` — core invocation: calls `timeout + llama-bench`, captures output, appends JSONL to `sweep.jsonl`, detects OOM/timeout.
+- `bench.DetectOOM()` — regex matches output for OOM strings ("CUDA out of memory", "failed to allocate", etc.).
+- `state.Save()` / `state.Load()` — serialize/deserialize `state.json` for `--resume`.
+- `hardware.ThermalMonitor` — polls CPU/GPU temperature; pauses the sweep if thermal limits are exceeded.
+- `phase.P0` … `phase.P7` — one struct per phase implementing the `Phase` interface.
 
 ### Output files (per model)
 
@@ -84,7 +97,7 @@ results/<model-stem>/
 ├── sweep.jsonl    # Append-only, one JSON record per run (source of truth)
 ├── sweep.md       # Human-readable Markdown summary table per phase
 ├── sweep.log      # Full timestamped execution log
-├── hardware.json  # Hardware snapshot from detect_hardware()
+├── hardware.json  # Hardware snapshot from hardware.Detect()
 ├── state.json     # Resume state: completed phases + best values + working sets
 └── raw/<run-id>.txt  # Raw llama-bench stdout per run
 ```
@@ -95,23 +108,11 @@ When `--turbo-bench <path>` is passed, runs using `turbo2`/`turbo3`/`turbo4` KV 
 
 ### Flag/env var convention
 
-Every CLI flag has a matching `SWEEP_*` environment variable. CLI flags always override env vars. The pattern throughout the script:
-
-```bash
-OPT_RESUME="${SWEEP_RESUME:-false}"   # env var sets default; CLI overrides
-```
-
-### Bash patterns to be aware of
-
-- `set -euo pipefail` is active — all subshell errors propagate
-- `(( expr )) || true` is used for arithmetic that might evaluate to zero (which would cause exit under `set -e`)
-- Pure-bash array builders are used in `save_state()` instead of jq pipelines (a previous bug source — jq arrays from bash loops had quoting issues)
-- Phase functions append to working sets with `WS_NGL+=" $val"` (space-separated strings, not arrays) to survive subshell boundaries
-- OOM detection uses `detect_oom()` called on the raw output file, not stderr trapping, because `timeout` complicates signal propagation
+Every CLI flag has a matching `SWEEP_*` environment variable. CLI flags always override env vars. Defaults are set in `config.Defaults()` using `os.Getenv`.
 
 ## Documentation update rule
 
-**Every PR that changes behaviour in `llamaseye.sh` must also update:**
+**Every PR that changes behaviour must also update:**
 1. `README.md` — user-facing description of affected phases, flags, or output
 2. `docs/spec.md` — engineering spec (JSONL schema, phase behaviour, output format)
 3. `skills/llamaseye/SKILL.md` — skill doc used by the Claude Code agent
