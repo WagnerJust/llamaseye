@@ -152,33 +152,36 @@ func GenerateMarkdown(outputDir, modelStem, goalSpec string, timeoutSec int) err
 		phase7OK := filterByPhaseStatus(records, 7, "ok")
 		if len(phase7OK) > 0 {
 			fmt.Fprintf(w, "## Goal Results — %s\n\n", goalSpecDesc(goalCtx, goalTG, goalPP))
-			fmt.Fprintln(w, "Phase 7 configurations that satisfy the goal, ranked by TG t/s.")
+			fmt.Fprintln(w, "One winner per distinct (ngl, ctk, nkvo, ctx) combination, ranked by TG t/s.")
+			fmt.Fprintln(w, "Each row is a meaningful trade-off decision; tuning variants (threads/b/ub) are collapsed to the best result.")
 			fmt.Fprintln(w)
-			fmt.Fprintln(w, "| ngl | fa | ctk | threads | nkvo | b | ub | n_prompt | PP t/s | TG t/s | viable |")
-			fmt.Fprintln(w, "|-----|-----|-----|---------|------|---|----|---------:|-------:|-------:|--------|")
-			var goalMatches []*record
+			fmt.Fprintln(w, "| ngl | ctk | nkvo | ctx | TG t/s | PP t/s | fa | threads | b | ub |")
+			fmt.Fprintln(w, "|-----|-----|------|----:|-------:|-------:|-----|---------|---|----|")
+
+			// Deduplicate: one winner per (ngl, ctk, nkvo, ctx) tuple — best TG wins
+			type tupleKey struct{ NGL int; CTK string; NKVO, Ctx int }
+			best := make(map[tupleKey]*record)
 			for _, rec := range phase7OK {
 				if !meetsGoal(rec, goalCtx, goalTG, goalPP) {
 					continue
 				}
-				goalMatches = append(goalMatches, rec)
-			}
-			sort.Slice(goalMatches, func(i, j int) bool {
-				return goalMatches[i].tgTS() > goalMatches[j].tgTS()
-			})
-			for _, rec := range goalMatches {
-				viableStr := "-"
-				if rec.Viable != nil {
-					if *rec.Viable {
-						viableStr = "true"
-					} else {
-						viableStr = "false"
-					}
+				k := tupleKey{rec.Params.NGL, rec.Params.CTK, rec.Params.NKVO, rec.Params.NPrompt}
+				if existing, found := best[k]; !found || rec.tgTS() > existing.tgTS() {
+					best[k] = rec
 				}
-				fmt.Fprintf(w, "| %d | %d | %s | %s | %d | %d | %d | %d | %s | %s | %s |\n",
-					rec.Params.NGL, rec.Params.FA, rec.Params.CTK,
-					rec.threadsDisplay(), rec.Params.NKVO, rec.Params.B, rec.Params.UB,
-					rec.Params.NPrompt, fmtTS(rec.ppTS()), fmtTS(rec.tgTS()), viableStr)
+			}
+			winners := make([]*record, 0, len(best))
+			for _, rec := range best {
+				winners = append(winners, rec)
+			}
+			sort.Slice(winners, func(i, j int) bool {
+				return winners[i].tgTS() > winners[j].tgTS()
+			})
+			for _, rec := range winners {
+				fmt.Fprintf(w, "| %d | %s | %d | %d | %s | %s | %d | %s | %d | %d |\n",
+					rec.Params.NGL, rec.Params.CTK, rec.Params.NKVO, rec.Params.NPrompt,
+					fmtTS(rec.tgTS()), fmtTS(rec.ppTS()),
+					rec.Params.FA, rec.threadsDisplay(), rec.Params.B, rec.Params.UB)
 			}
 			fmt.Fprintln(w)
 		}

@@ -82,6 +82,7 @@ func Parse(args []string, version string) (*config.Config, []string, error) {
 
 	// Goal and fine-ctx
 	fs.StringVar(&cfg.Goal, "goal", cfg.Goal, `Goal-directed Phase 7 (e.g. "ctx=32768,tg=5")`)
+	fs.IntVar(&cfg.GoalTargetCount, "goal-hits", cfg.GoalTargetCount, "Stop goal mode after N distinct (ngl,ctk,nkvo,ctx) configs are found")
 	fs.BoolVar(&cfg.FineCtx, "fine-ctx", cfg.FineCtx, "Enable midpoint bisection in Phase 6")
 	fs.IntVar(&cfg.CtxStepMin, "ctx-step-min", cfg.CtxStepMin, "Min bisection step for --fine-ctx")
 	fs.BoolVar(&cfg.OptimizedSweep, "optimized-sweep", cfg.OptimizedSweep,

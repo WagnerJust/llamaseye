@@ -294,7 +294,7 @@ func nonEmptyLines(data []byte) []string {
 }
 
 func TestParseGoal_Basic(t *testing.T) {
-	g := parseGoal("ctx=8192,tg=15.5,pp=200.0")
+	g := parseGoal("ctx=8192,tg=15.5,pp=200.0", 3)
 	if g.CtxMin != 8192 {
 		t.Errorf("CtxMin = %d, want 8192", g.CtxMin)
 	}
@@ -310,14 +310,14 @@ func TestParseGoal_Basic(t *testing.T) {
 }
 
 func TestParseGoal_Empty(t *testing.T) {
-	g := parseGoal("")
+	g := parseGoal("", 3)
 	if g.CtxMin != 0 || g.TGMin != 0 || g.PPMin != 0 {
 		t.Errorf("expected zero goal for empty spec, got %+v", g)
 	}
 }
 
 func TestParseGoal_PartialSpec(t *testing.T) {
-	g := parseGoal("ctx=4096")
+	g := parseGoal("ctx=4096", 3)
 	if g.CtxMin != 4096 {
 		t.Errorf("CtxMin = %d, want 4096", g.CtxMin)
 	}

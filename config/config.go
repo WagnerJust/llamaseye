@@ -164,7 +164,7 @@ func Defaults() *Config {
 		DirFA:           envStr("SWEEP_FA_DIR", "up"),
 		MinCTK:          envStr("SWEEP_MIN_CTK", ""),
 		Goal:            envStr("SWEEP_GOAL", ""),
-		GoalTargetCount: 3,
+		GoalTargetCount: envInt("SWEEP_GOAL_HITS", 3),
 		FineCtx:         envBool("SWEEP_FINE_CTX", false),
 		CtxStepMin:      envInt("SWEEP_CTX_STEP_MIN", 8192),
 		OptimizedSweep:  envBool("SWEEP_OPTIMIZED_SWEEP", false),

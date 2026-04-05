@@ -122,7 +122,7 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 	// Build goal config
 	var goal *phase.GoalConfig
 	if s.Config.Goal != "" {
-		goal = parseGoal(s.Config.Goal)
+		goal = parseGoal(s.Config.Goal, s.Config.GoalTargetCount)
 	}
 
 	// Define all phases
@@ -240,8 +240,11 @@ func appendUnique(s []int, v int) []int {
 	return append(s, v)
 }
 
-func parseGoal(spec string) *phase.GoalConfig {
-	g := &phase.GoalConfig{MaxHits: 3}
+func parseGoal(spec string, hits int) *phase.GoalConfig {
+	if hits <= 0 {
+		hits = 3
+	}
+	g := &phase.GoalConfig{MaxHits: hits}
 	for _, part := range strings.Split(spec, ",") {
 		part = strings.TrimSpace(part)
 		kv := strings.SplitN(part, "=", 2)
