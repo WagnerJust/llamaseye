@@ -348,24 +348,24 @@ Pass to llamaseye via `--turbo-bench ~/llama-cpp-turboquant/build/bin/llama-benc
 
 ### Step 4 — Deploy llamaseye script
 
-The script is maintained as a git clone at `~/Src/llamaseye/` on the remote host.
-To update it, pull the latest from the remote host:
+The binary is built from a git clone at `~/Src/llamaseye/` on `justin@justin-powerhouse`.
+To update and rebuild:
 
 ```sh
-ssh user@inference-host "cd ~/Src/llamaseye && git pull"
+ssh justin@justin-powerhouse "cd ~/Src/llamaseye && git pull && go build -o llamaseye ."
 ```
 
 If the repo is not yet cloned:
 
 ```sh
-ssh user@inference-host "mkdir -p ~/Src && git clone https://github.com/jwagnerhki/llamaseye ~/Src/llamaseye"
+ssh justin@justin-powerhouse "mkdir -p ~/Src && git clone https://github.com/WagnerJust/llamaseye ~/Src/llamaseye && cd ~/Src/llamaseye && go build -o llamaseye ."
 ```
 
 After cloning, set up `.env`:
 
 ```sh
-ssh user@inference-host "cd ~/Src/llamaseye && cp example.env .env"
-# Then edit ~/Src/llamaseye/.env on the remote host to set paths
+ssh justin@justin-powerhouse "cd ~/Src/llamaseye && cp example.env .env"
+# Then edit ~/Src/llamaseye/.env on the remote host to set LLAMA_BENCH_BIN, SWEEP_OUTPUT_DIR, etc.
 ```
 
 ## Phase Reference
