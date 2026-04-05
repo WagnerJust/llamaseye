@@ -206,10 +206,10 @@ cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/be
 
 | Variable | What it controls | Example |
 |----------|-----------------|----------|
-| `LLAMA_BENCH_BIN` | Path to the standard llama-bench binary | `~/llama.cpp/build/bin/llama-bench` |
+| `LLAMA_BENCH_BIN` | Path to the standard llama-bench binary (**required — no default**) | `~/llama.cpp/build/bin/llama-bench` |
 | `SWEEP_TURBO_BENCH_BIN` | Path to TurboQuant binary (optional) | `~/llama-cpp-turboquant/build/bin/llama-bench` |
 | `SWEEP_MODELS_DIR` | Directory scanned for .gguf files | `~/Models` |
-| `SWEEP_OUTPUT_DIR` | Root directory for all sweep results | `~/Models/bench/sweep` |
+| `SWEEP_OUTPUT_DIR` | Root directory for all sweep results (default: `./results`) | `~/Models/bench/sweep` |
 | `SWEEP_NGL_STEP` | Layer step size for NGL sweep | `4` (use `2` near VRAM edge) |
 | `SWEEP_REPETITIONS` | Benchmark reps per run (`-r`) | `3` |
 | `SWEEP_TIMEOUT_SEC` | Per-run kill timeout (seconds) | `600` |
@@ -318,8 +318,7 @@ cmake --build build --config Release --target llama-bench <JOBS>
 ./build/bin/llama-bench --help 2>&1 | head -5
 ```
 
-The binary path defaults to `~/llama.cpp/build/bin/llama-bench`. Override with
-`--llama-bench <path>` or the `LLAMA_BENCH_BIN` environment variable.
+There is no default binary path — `LLAMA_BENCH_BIN` must be set or `--llama-bench` must be passed. The script exits with a clear error if neither is provided.
 
 ### Step 3 — Build TurboQuant llama-bench (optional)
 

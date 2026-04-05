@@ -111,7 +111,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --target llama-bench -j$(nproc)
 ```
 
-The binary will be at `build/bin/llama-bench`. Pass its path to llamaseye via `--llama-bench <path>` or set the `LLAMA_BENCH_BIN` environment variable. The default assumed path is `~/llama.cpp/build/bin/llama-bench`.
+The binary will be at `build/bin/llama-bench`. Pass its path to llamaseye via `--llama-bench <path>` or set the `LLAMA_BENCH_BIN` environment variable. There is no default — llamaseye will exit with an error if the binary is not specified.
 
 > The build flags you choose determine which backends and features are available during the sweep. llamaseye works with any valid llama-bench binary — it does not require any specific build flags itself.
 
@@ -152,7 +152,7 @@ If these are absent, llamaseye disables the corresponding thermal guard and logs
 | `--model <path>` | Single GGUF model to benchmark |
 | `--models-dir <dir>` | Directory to scan for GGUF models |
 | `--model-list <file>` | Text file listing model filenames (one per line) |
-| `--output-dir <dir>` | Root directory for all results (default: `~/Models/bench/sweep`) |
+| `--output-dir <dir>` | Root directory for all results (default: `./results`) |
 | `--llama-bench <path>` | Path to standard llama-bench binary |
 | `--turbo-bench <path>` | Path to TurboQuant llama-bench binary (enables turbo2/3/4 KV types) |
 | `--ngl-step <n>` | Step size for NGL axis sweep (default: 4) |

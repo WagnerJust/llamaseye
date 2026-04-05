@@ -1074,10 +1074,10 @@ All overridable via `.env` file, environment variable, or CLI flag. Load order (
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLAMA_BENCH_BIN` | `~/llama.cpp/build/bin/llama-bench` | Path to standard llama-bench binary |
+| `LLAMA_BENCH_BIN` | *(required — no default)* | Path to standard llama-bench binary |
 | `SWEEP_TURBO_BENCH_BIN` | *(unset)* | Path to TurboQuant llama-bench binary (optional) |
 | `SWEEP_MODELS_DIR` | *(required if no model flag)* | Directory to scan for `.gguf` files |
-| `SWEEP_OUTPUT_DIR` | `~/Models/bench/sweep` | Root output directory |
+| `SWEEP_OUTPUT_DIR` | `./results` | Root output directory |
 | `SWEEP_NGL_STEP` | `4` | Layer step for ngl sweep |
 | `SWEEP_REPETITIONS` | `3` | `-r` for main runs |
 | `SWEEP_PROBE_REPS` | `1` | `-r` for Phase 0 probe |
@@ -1271,7 +1271,7 @@ Model selection (one required):
                              Use with --models-dir to resolve bare filenames.
 
 Output:
-  --output-dir <path>        Root output directory. Default: ~/Models/bench/sweep
+  --output-dir <path>        Root output directory. Default: ./results
                              Each model gets its own subdirectory inside.
 
 Sweep control:
@@ -1286,7 +1286,7 @@ Sweep control:
 
 Hardware / environment:
   --llama-bench <path>       Path to standard llama-bench binary.
-                             Default: ~/llama.cpp/build/bin/llama-bench
+                             Required — no default.
   --turbo-bench <path>       Path to TurboQuant llama-bench binary (optional).
                              Enables turbo2/turbo3/turbo4 KV cache types in
                              Phase 2 and Phase 7. Must be built from:
