@@ -1026,20 +1026,33 @@ context size per (ngl, ctk, nkvo) triple.
 
 ---
 
-## Script Architecture
+## Binary Architecture
 
-Single Bash script: `llamaseye.sh`
+llamaseye is a self-contained Go binary (previously a Bash script: `llamaseye.sh`). Build with `go build -o llamaseye .`. No external runtime dependencies beyond `llama-bench` and optional thermal-monitoring tools.
 
-### Required external tools
+### Go package structure
+
+| Package | Responsibility |
+|---------|---------------|
+| `main` | Entry point, CLI wiring, hardware detection, confirmation prompt |
+| `cmd` | pflag-based CLI parsing, model resolution |
+| `config` | Config struct, `Defaults()`, `Validate()`, env-var overrides |
+| `hardware` | CPU/RAM/GPU detection (platform-specific), thermal monitoring |
+| `gguf` | Pure-Go binary GGUF parser, `Predict()` for optimized-sweep |
+| `bench` | `CommandExecutor` interface, `BenchRunner`, OOM detection |
+| `state` | `State` JSON schema, `Load`/`Save` (bidirectionally compatible with bash output) |
+| `phase` | `Phase` interface, `PhaseEnv`, Phases 0–7 |
+| `output` | JSONL append, Markdown generation, hardware.json, logger |
+| `sweep` | `Sweeper.SweepModel` orchestrator, `ReportMode` |
+
+### Optional system tools
 
 | Tool | Purpose |
 |------|---------|
-| `llama-bench` | The benchmark binary |
-| `nvidia-smi` | GPU temperature |
-| `sensors` | CPU temperature (`lm-sensors` package) |
-| `jq` | JSONL record construction |
-| `timeout` | Per-run timeout |
-| `uuidgen` | Run IDs (fallback: `date +%s%N | md5sum | head -c 8`) |
+| `llama-bench` | The benchmark binary (required) |
+| `nvidia-smi` | NVIDIA GPU VRAM and temperature detection |
+| `sensors` | Linux CPU temperature (`lm-sensors` package) |
+| `osx-cpu-temp` | macOS CPU temperature (optional) |
 
 ### Configuration variables
 
