@@ -153,6 +153,8 @@ These control where each phase begins its sweep and which direction it moves. Di
 | `--threads-dir up\|down` | Thread sweep direction (default: `up`) |
 | `--start-ctx <n>` | Begin context sweep at this prompt size; also sets Phase 7 min-ctx |
 | `--ctx-dir up\|down` | Context sweep direction (default: `up` = toward 131072) |
+| `--fine-ctx` | Enable midpoint bisection in Phase 6 (see [Fine-grained context sweep](#fine-grained-context-sweep)) |
+| `--ctx-step-min <n>` | Minimum bisection step for `--fine-ctx` (default: `8192`) |
 | `--start-ctk <type>` | Begin KV quant sweep at this type |
 | `--ctk-dir up\|down` | KV type sweep direction (default: `up` = toward more compression) |
 | `--start-b <n>` | Begin batch size sweep at this value |
@@ -232,6 +234,19 @@ When the primary config OOMs at a given context size, Phase 6 automatically trie
 2. More-compressed ctk types (q4_0, turbo types) × both nkvo values
 
 Only ctk/nkvo values already validated by Phases 2 and 4 are tried.
+
+### Fine-grained context sweep
+
+By default Phase 6 sweeps context as powers of two (512 → 1024 → … → 65536 → 131072). This means a more-compressed KV type might unlock an intermediate context size that the sweep never discovers.
+
+Use `--fine-ctx` to enable midpoint bisection: when all fallbacks fail at a ctx size, the sweep bisects between the last successful ctx and the failed ctx, probing the midpoint and narrowing until the gap is ≤ `--ctx-step-min` (default 8192).
+
+```
+# example: turbo3 unlocks 98304 on a card where q4_0 maxes at 65536
+bash llamaseye.sh --model my.gguf --fine-ctx
+```
+
+Each bisection probe runs the full primary + fallback sequence, so `--fine-ctx` is off by default — it adds real runtime cost at large context sizes.
 
 ### Phase 7 — Auto-derived minimum filters
 

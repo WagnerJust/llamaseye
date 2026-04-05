@@ -173,6 +173,10 @@ GOAL_TG_TS=""
 GOAL_PP_TS=""
 GOAL_TARGET_COUNT=3                              # stop Phase 7 after this many goal-satisfying configs
 
+# --- Fine-grained context sweep (Phase 6 bisection) ---
+OPT_FINE_CTX="${SWEEP_FINE_CTX:-false}"          # --fine-ctx / SWEEP_FINE_CTX
+OPT_CTX_STEP_MIN="${SWEEP_CTX_STEP_MIN:-8192}"   # --ctx-step-min / SWEEP_CTX_STEP_MIN
+
 
 # =============================================================================
 # FUNCTIONS
@@ -298,6 +302,14 @@ Phase 7 minimum thresholds (auto-derived by default, override to disable):
                         Example: --goal "ctx=32768,tg=5"
                         Phases 0-6 are unaffected. Without --goal, Phase 7
                         runs exhaustively as usual.
+
+  --fine-ctx            Enable midpoint bisection in Phase 6: when a context
+                        size fails, probe the midpoint between the last ok ctx
+                        and the failed ctx before stopping. Repeats until the
+                        gap is smaller than --ctx-step-min. Off by default
+                        because each probe at large ctx is slow.
+  --ctx-step-min N      Minimum bisection step size for --fine-ctx (default: 8192).
+                        Bisection stops when (failed_ctx - last_ok_ctx) ≤ N.
 
   --optimized-sweep     Parse GGUF metadata to predict max NGL and best context
                         ceiling, then derive --start-ngl and --start-ctx
@@ -464,6 +476,11 @@ parse_args() {
             --goal)
                 [[ $# -lt 2 ]] && die "--goal requires an argument (e.g. --goal \"ctx=32768,tg=5\")"
                 OPT_GOAL="$2"; shift 2 ;;
+            --fine-ctx)
+                OPT_FINE_CTX=true; shift ;;
+            --ctx-step-min)
+                [[ $# -lt 2 ]] && die "--ctx-step-min requires a numeric argument"
+                OPT_CTX_STEP_MIN="$2"; shift 2 ;;
             --optimized-sweep)
                 OPT_OPTIMIZED_SWEEP=true; shift ;;
             --dry-run)
@@ -2237,7 +2254,98 @@ phase5_batch_sweep() {
 #     2. More-compressed ctk types from WS_FA_CTK, with both nkvo values
 #   Timeout = break immediately (more compression won't fix throughput).
 #   Largest stable context (with any config) becomes BEST_CTX.
+#
+#   With --fine-ctx: when all fallbacks fail at a ctx size, bisects between
+#   BEST_CTX and the failed ctx to find intermediate sizes that fit, stopping
+#   when the gap is ≤ --ctx-step-min (default 8192).
 # -----------------------------------------------------------------------------
+
+# _phase6_try_ctx CTX CTK_QUALITY_ORDER_NAMEREF BEST_CTK_IDX
+#   Runs the primary config at CTX, then fallbacks if it fails.
+#   Prints "ok", "timeout", or "fail" to stdout.
+#   Updates WS_CTX and BEST_CTX as side effects when ok.
+_phase6_try_ctx() {
+    local ctx="$1"
+    local -n _ctk_order="$2"
+    local best_ctk_idx="$3"
+
+    # --- Primary config ---
+    local status
+    status="$(run_bench "phase6/ctx=${ctx}" \
+        ngl="${BEST_NGL}" fa="${BEST_FA}" ctk="${BEST_CTK}" ctv="${BEST_CTV}" \
+        threads="${BEST_THREADS}" nkvo="${BEST_NKVO}" \
+        b="${BEST_B}" ub="${BEST_UB}" \
+        n_prompt="${ctx}" n_gen=0 reps=2 \
+        phase=6 phase_label="ctx_sweep")"
+
+    if [[ "${status}" == "ok" ]]; then
+        WS_CTX="${WS_CTX:+${WS_CTX} }${ctx}"
+        BEST_CTX="${ctx}"
+        echo "ok"; return
+    fi
+
+    if [[ "${status}" == "timeout" ]]; then
+        echo "timeout"; return
+    fi
+
+    # OOM or error — try fallbacks before giving up on this ctx size.
+    log "[Phase 6] ctx=${ctx} failed (${status}) with best config — trying fallbacks"
+
+    local fell_back=false
+    local -a fallbacks=()
+
+    # Part 1 — nkvo flip (same quality, just moves KV cache to RAM)
+    local alt_nkvo
+    [[ "${BEST_NKVO}" == "0" ]] && alt_nkvo="1" || alt_nkvo="0"
+    echo "${WS_NKVO}" | tr ' ' '\n' | grep -qw "${alt_nkvo}" && \
+        fallbacks+=("${BEST_FA} ${BEST_CTK} ${BEST_CTV} ${alt_nkvo}")
+
+    # Part 2 — more-compressed ctk types (lower index = more compressed)
+    local i
+    for (( i=0; i<best_ctk_idx; i++ )); do
+        local fb_ctk="${_ctk_order[$i]}"
+        [[ "${fb_ctk}" == turbo* && "${TURBO_AVAILABLE}" != "true" ]] && continue
+        local fa_ctv
+        fa_ctv="$(_best_fa_ctv_for_ctk "${fb_ctk}")" || continue
+        local fb_fa fb_ctv
+        read -r fb_fa fb_ctv <<< "${fa_ctv}"
+        local nkvo_fb
+        for nkvo_fb in 0 1; do
+            echo "${WS_NKVO}" | tr ' ' '\n' | grep -qw "${nkvo_fb}" || continue
+            fallbacks+=("${fb_fa} ${fb_ctk} ${fb_ctv} ${nkvo_fb}")
+        done
+    done
+
+    local fb_entry fb_fa fb_ctk fb_ctv fb_nkvo
+    for fb_entry in "${fallbacks[@]}"; do
+        read -r fb_fa fb_ctk fb_ctv fb_nkvo <<< "${fb_entry}"
+        local fb_status
+        fb_status="$(run_bench "phase6/ctx=${ctx}/nkvo=${fb_nkvo}_ctk=${fb_ctk}" \
+            ngl="${BEST_NGL}" fa="${fb_fa}" ctk="${fb_ctk}" ctv="${fb_ctv}" \
+            threads="${BEST_THREADS}" nkvo="${fb_nkvo}" \
+            b="${BEST_B}" ub="${BEST_UB}" \
+            n_prompt="${ctx}" n_gen=0 reps=2 \
+            phase=6 phase_label="ctx_sweep")"
+        if [[ "${fb_status}" == "ok" ]]; then
+            log "[Phase 6] ctx=${ctx} succeeded with fallback nkvo=${fb_nkvo} ctk=${fb_ctk}"
+            WS_CTX="${WS_CTX:+${WS_CTX} }${ctx}"
+            BEST_CTX="${ctx}"
+            fell_back=true
+            break
+        fi
+        # Note: do NOT break on timeout here — a timeout on one ctk type (e.g. f16)
+        # does not predict whether a more-compressed ctk (e.g. turbo3) will also
+        # time out. Turbo types compress the KV cache 3-6×, changing both memory
+        # pressure and throughput. Continue through all fallbacks.
+    done
+
+    if [[ "${fell_back}" == "true" ]]; then
+        echo "ok"
+    else
+        echo "fail"
+    fi
+}
+
 phase6_ctx_sweep() {
     log "[Phase 6] Context size sweep"
 
@@ -2245,9 +2353,6 @@ phase6_ctx_sweep() {
     local ctx_list
     ctx_list="$(apply_axis_opts "${full_ctx_list}" "${OPT_START_CTX}" "${OPT_DIR_CTX}")"
 
-    # ctk quality order low→high (= compression order high→low)
-    # Fallbacks use more-compressed types than BEST_CTK, so we iterate this
-    # list and skip anything at or above BEST_CTK's index.
     local -a ctk_quality_order=("turbo2" "turbo3" "turbo4" "q4_0" "q8_0" "f16")
     local best_ctk_idx=5  # default to f16 (least compressed)
     local i
@@ -2261,91 +2366,49 @@ phase6_ctx_sweep() {
     while IFS= read -r ctx; do
         [[ -z "${ctx}" ]] && continue
 
-        # --- Primary config ---
-        local status
-        status="$(run_bench "phase6/ctx=${ctx}" \
-            ngl="${BEST_NGL}" fa="${BEST_FA}" ctk="${BEST_CTK}" ctv="${BEST_CTV}" \
-            threads="${BEST_THREADS}" nkvo="${BEST_NKVO}" \
-            b="${BEST_B}" ub="${BEST_UB}" \
-            n_prompt="${ctx}" n_gen=0 reps=2 \
-            phase=6 phase_label="ctx_sweep")"
+        local result
+        result="$(_phase6_try_ctx "${ctx}" ctk_quality_order "${best_ctk_idx}")"
 
-        if [[ "${status}" == "ok" ]]; then
-            WS_CTX="${WS_CTX:+${WS_CTX} }${ctx}"
-            BEST_CTX="${ctx}"
+        if [[ "${result}" == "ok" ]]; then
             continue
         fi
 
-        # Timeout = throughput ceiling, not memory — no fallback will help.
-        if [[ "${status}" == "timeout" ]]; then
+        if [[ "${result}" == "timeout" ]]; then
             log "[Phase 6] Stopping at ctx=${ctx} (timeout)"
             break
         fi
 
-        # OOM or error — try fallbacks before giving up on this ctx size.
-        log "[Phase 6] ctx=${ctx} failed (${status}) with best config — trying fallbacks"
+        # All fallbacks failed at this ctx.
+        # With --fine-ctx: bisect between BEST_CTX and ctx to find the true ceiling.
+        if [[ "${OPT_FINE_CTX}" == "true" && "${BEST_CTX}" -gt 0 ]]; then
+            local hi="${ctx}"
+            local min_step="${OPT_CTX_STEP_MIN}"
+            log "[Phase 6] Bisecting between ctx=${BEST_CTX} and ctx=${hi} (step-min=${min_step})"
 
-        local fell_back=false
+            while (( hi - BEST_CTX > min_step )); do
+                local mid=$(( (BEST_CTX + hi) / 2 ))
+                # Round to nearest 512 for clean token counts
+                mid=$(( (mid + 256) / 512 * 512 ))
+                # Guard against getting stuck (mid must be strictly between bounds)
+                [[ ${mid} -le ${BEST_CTX} || ${mid} -ge ${hi} ]] && break
 
-        # Build fallback sequence:
-        #   Part 1: same ctk, flip nkvo
-        #   Part 2: more-compressed ctk types from WS_FA_CTK × both nkvo values
-        # Each entry: "fa ctk ctv nkvo"
-        local -a fallbacks=()
+                log "[Phase 6] Bisect probe: ctx=${mid} (range ${BEST_CTX}–${hi})"
+                local bisect_result
+                bisect_result="$(_phase6_try_ctx "${mid}" ctk_quality_order "${best_ctk_idx}")"
 
-        # Part 1 — nkvo flip (same quality, just moves KV cache to RAM)
-        local alt_nkvo
-        [[ "${BEST_NKVO}" == "0" ]] && alt_nkvo="1" || alt_nkvo="0"
-        # Only add if alt_nkvo is in WS_NKVO
-        echo "${WS_NKVO}" | tr ' ' '\n' | grep -qw "${alt_nkvo}" && \
-            fallbacks+=("${BEST_FA} ${BEST_CTK} ${BEST_CTV} ${alt_nkvo}")
-
-        # Part 2 — more-compressed ctk types (lower index = more compressed)
-        for (( i=0; i<best_ctk_idx; i++ )); do
-            local fb_ctk="${ctk_quality_order[$i]}"
-            # Skip turbo types if binary not available
-            [[ "${fb_ctk}" == turbo* && "${TURBO_AVAILABLE}" != "true" ]] && continue
-            # Only try if Phase 2 found this ctk viable
-            local fa_ctv
-            fa_ctv="$(_best_fa_ctv_for_ctk "${fb_ctk}")" || continue
-            local fb_fa fb_ctv
-            read -r fb_fa fb_ctv <<< "${fa_ctv}"
-            # Try nkvo=0 first, then nkvo=1
-            local nkvo_fb
-            for nkvo_fb in 0 1; do
-                echo "${WS_NKVO}" | tr ' ' '\n' | grep -qw "${nkvo_fb}" || continue
-                fallbacks+=("${fb_fa} ${fb_ctk} ${fb_ctv} ${nkvo_fb}")
+                if [[ "${bisect_result}" == "ok" ]]; then
+                    : # BEST_CTX updated by _phase6_try_ctx; loop continues upward
+                elif [[ "${bisect_result}" == "timeout" ]]; then
+                    log "[Phase 6] Bisect: timeout at ctx=${mid} — stopping"
+                    break 2  # exit both bisect loop and outer ctx loop
+                else
+                    hi="${mid}"  # narrow the upper bound and probe lower
+                fi
             done
-        done
-
-        # Run through fallbacks
-        local fb_entry fb_fa fb_ctk fb_ctv fb_nkvo
-        for fb_entry in "${fallbacks[@]}"; do
-            read -r fb_fa fb_ctk fb_ctv fb_nkvo <<< "${fb_entry}"
-            local fb_status
-            fb_status="$(run_bench "phase6/ctx=${ctx}/nkvo=${fb_nkvo}_ctk=${fb_ctk}" \
-                ngl="${BEST_NGL}" fa="${fb_fa}" ctk="${fb_ctk}" ctv="${fb_ctv}" \
-                threads="${BEST_THREADS}" nkvo="${fb_nkvo}" \
-                b="${BEST_B}" ub="${BEST_UB}" \
-                n_prompt="${ctx}" n_gen=0 reps=2 \
-                phase=6 phase_label="ctx_sweep")"
-            if [[ "${fb_status}" == "ok" ]]; then
-                log "[Phase 6] ctx=${ctx} succeeded with fallback nkvo=${fb_nkvo} ctk=${fb_ctk}"
-                WS_CTX="${WS_CTX:+${WS_CTX} }${ctx}"
-                BEST_CTX="${ctx}"
-                fell_back=true
-                break
-            fi
-            # Note: do NOT break on timeout here — a timeout on one ctk type (e.g. f16)
-            # does not predict whether a more-compressed ctk (e.g. turbo3) will also
-            # time out. Turbo types compress the KV cache 3-6×, changing both memory
-            # pressure and throughput. Continue through all fallbacks.
-        done
-
-        if [[ "${fell_back}" != "true" ]]; then
-            log "[Phase 6] Stopping at ctx=${ctx} — primary and all fallbacks failed"
-            break
+            log "[Phase 6] Bisect complete — best ctx: ${BEST_CTX}"
         fi
+
+        break
 
     done <<< "${ctx_list}"
 
