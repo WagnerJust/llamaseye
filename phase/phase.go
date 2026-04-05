@@ -4,11 +4,11 @@ package phase
 import (
 	"context"
 
-	"github.com/justinphilpott/llamaseye/bench"
-	"github.com/justinphilpott/llamaseye/config"
-	"github.com/justinphilpott/llamaseye/hardware"
-	"github.com/justinphilpott/llamaseye/output"
-	"github.com/justinphilpott/llamaseye/state"
+	"github.com/WagnerJust/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/config"
+	"github.com/WagnerJust/llamaseye/hardware"
+	"github.com/WagnerJust/llamaseye/output"
+	"github.com/WagnerJust/llamaseye/state"
 )
 
 // Phase is implemented by each of the 8 sweep phases.

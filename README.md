@@ -80,7 +80,7 @@ llamaseye is a single Go binary with no runtime dependencies beyond the OS. Requ
 go build -o llamaseye .
 
 # Optionally install into your PATH
-go install github.com/justinphilpott/llamaseye@latest
+go install github.com/WagnerJust/llamaseye@latest
 ```
 
 The binary statically links all dependencies. No external tools are required at runtime except `llama-bench` itself.

@@ -3,9 +3,9 @@ package phase
 import (
 	"context"
 
-	"github.com/justinphilpott/llamaseye/bench"
-	"github.com/justinphilpott/llamaseye/output"
-	"github.com/justinphilpott/llamaseye/state"
+	"github.com/WagnerJust/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/output"
+	"github.com/WagnerJust/llamaseye/state"
 )
 
 // CTKQualityOrder defines KV type ordering from least to most compressed.

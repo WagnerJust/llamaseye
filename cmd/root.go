@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/justinphilpott/llamaseye/config"
+	"github.com/WagnerJust/llamaseye/config"
 	flag "github.com/spf13/pflag"
 )
 

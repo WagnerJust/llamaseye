@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/justinphilpott/llamaseye/hardware"
+	"github.com/WagnerJust/llamaseye/hardware"
 )
 
 const sampleJSONL = `{"run_id":"r1","timestamp":"2024-01-01T00:00:00Z","model_path":"/m.gguf","model_stem":"m","phase":1,"phase_label":"ngl_sweep","binary":"standard","status":"ok","viable":true,"params":{"ngl":32,"fa":1,"ctk":"f16","ctv":"f16","nkvo":0,"threads":null,"threads_is_default":true,"b":2048,"ub":512,"n_prompt":512,"n_gen":128,"repetitions":3},"results":[{"test":"pp","n_prompt":512,"avg_ts":100.0,"stddev_ts":1.0},{"test":"tg","n_gen":128,"avg_ts":25.0,"stddev_ts":0.5}],"wall_time_sec":10.0,"raw_output_file":"raw/r1.txt","error_snippet":null}

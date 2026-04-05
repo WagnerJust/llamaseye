@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/justinphilpott/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/bench"
 )
 
 // JSONLParams holds all benchmark parameters to be recorded.

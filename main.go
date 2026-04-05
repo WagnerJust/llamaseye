@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/justinphilpott/llamaseye/bench"
-	"github.com/justinphilpott/llamaseye/cmd"
-	"github.com/justinphilpott/llamaseye/envfile"
-	"github.com/justinphilpott/llamaseye/hardware"
-	"github.com/justinphilpott/llamaseye/output"
-	"github.com/justinphilpott/llamaseye/sweep"
+	"github.com/WagnerJust/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/cmd"
+	"github.com/WagnerJust/llamaseye/envfile"
+	"github.com/WagnerJust/llamaseye/hardware"
+	"github.com/WagnerJust/llamaseye/output"
+	"github.com/WagnerJust/llamaseye/sweep"
 )
 
 func main() {

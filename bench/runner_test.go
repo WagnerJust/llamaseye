@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/justinphilpott/llamaseye/config"
+	"github.com/WagnerJust/llamaseye/config"
 )
 
 // mockExecutor implements CommandExecutor for tests.

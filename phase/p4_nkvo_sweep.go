@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/justinphilpott/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/bench"
 )
 
 // P4NKVOSweep tests KV offload combinations.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/justinphilpott/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/bench"
 )
 
 // P6CtxSweep sweeps context window sizes with OOM fallback logic.

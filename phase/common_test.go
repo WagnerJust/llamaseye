@@ -3,7 +3,7 @@ package phase
 import (
 	"testing"
 
-	"github.com/justinphilpott/llamaseye/state"
+	"github.com/WagnerJust/llamaseye/state"
 )
 
 func TestApplyAxisOpts_Up(t *testing.T) {

@@ -1,4 +1,4 @@
-module github.com/justinphilpott/llamaseye
+module github.com/WagnerJust/llamaseye
 
 go 1.22
 

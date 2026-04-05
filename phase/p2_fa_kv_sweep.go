@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/justinphilpott/llamaseye/bench"
-	"github.com/justinphilpott/llamaseye/state"
+	"github.com/WagnerJust/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/state"
 )
 
 // faCombo represents a flash-attention × KV-quant combination to test.

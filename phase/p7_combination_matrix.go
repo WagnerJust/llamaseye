@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/justinphilpott/llamaseye/bench"
-	"github.com/justinphilpott/llamaseye/state"
+	"github.com/WagnerJust/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/state"
 )
 
 // GoalConfig holds the parsed goal specification for phase 7.

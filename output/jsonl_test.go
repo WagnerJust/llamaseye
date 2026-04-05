@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/justinphilpott/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/bench"
 )
 
 func TestAppendRecord_OK(t *testing.T) {

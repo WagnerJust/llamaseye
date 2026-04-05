@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/justinphilpott/llamaseye/hardware"
+	"github.com/WagnerJust/llamaseye/hardware"
 )
 
 // WriteHardwareJSON writes hardware.json to outputDir.

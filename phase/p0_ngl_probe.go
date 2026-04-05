@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/justinphilpott/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/bench"
 )
 
 // P0NGLProbe implements Phase 0: binary-step probe to find max stable NGL.

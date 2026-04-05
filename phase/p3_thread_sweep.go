@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/justinphilpott/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/bench"
 )
 
 // P3ThreadSweep sweeps CPU thread counts.

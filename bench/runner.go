@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/justinphilpott/llamaseye/config"
+	"github.com/WagnerJust/llamaseye/config"
 )
 
 // CommandExecutor is the testability seam for running external processes.

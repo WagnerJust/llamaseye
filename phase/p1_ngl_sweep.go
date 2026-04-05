@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/justinphilpott/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/bench"
 )
 
 // P1NGLSweep sweeps NGL near MAX_NGL to find the best GPU layer count.

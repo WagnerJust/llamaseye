@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/justinphilpott/llamaseye/bench"
-	"github.com/justinphilpott/llamaseye/config"
-	"github.com/justinphilpott/llamaseye/gguf"
-	"github.com/justinphilpott/llamaseye/hardware"
-	"github.com/justinphilpott/llamaseye/output"
-	"github.com/justinphilpott/llamaseye/phase"
-	"github.com/justinphilpott/llamaseye/state"
+	"github.com/WagnerJust/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/config"
+	"github.com/WagnerJust/llamaseye/gguf"
+	"github.com/WagnerJust/llamaseye/hardware"
+	"github.com/WagnerJust/llamaseye/output"
+	"github.com/WagnerJust/llamaseye/phase"
+	"github.com/WagnerJust/llamaseye/state"
 )
 
 // Sweeper runs the full sweep pipeline.
