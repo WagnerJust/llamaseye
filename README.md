@@ -49,13 +49,21 @@ nohup ./llamaseye --models-dir ~/Models --output-dir ./results > /dev/null 2>&1 
 
 ### Using a .env file
 
-All environment variables can be set in a `.env` file instead of passing flags every time:
+All environment variables can be set in a `.env` file instead of passing flags every time. The binary **auto-loads `.env` from the working directory** if it exists — no `source` step needed:
 
 ```sh
 cp example.env .env
 # Edit .env to match your paths and preferences
-source .env && ./llamaseye --models-dir ~/Models
+./llamaseye --models-dir ~/Models   # .env is loaded automatically
 ```
+
+To load a file at a different path use `--env-file`:
+
+```sh
+./llamaseye --env-file ~/my-config.env --model ~/Models/model.gguf
+```
+
+**Load order:** `.env` file → process environment → CLI flags. Process env vars always override file values; CLI flags override everything.
 
 Every CLI flag has a corresponding environment variable — env vars set the default value, and CLI flags override them when both are provided. `example.env` in the repo root documents every available variable with its default value and a description. The most important ones to set are `LLAMA_BENCH_BIN` (path to your llama-bench binary) and `SWEEP_OUTPUT_DIR` (where results are written).
 

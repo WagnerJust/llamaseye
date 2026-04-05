@@ -43,42 +43,42 @@ description: >
 
 ## Running a Sweep
 
-The binary reads `SWEEP_*` env vars from the environment. Source `.env` before running if it exists:
+The binary **auto-loads `.env` from the working directory** — no `source` step needed.
+Run from `~/Src/llamaseye/` and it picks up `.env` automatically:
 
 ```sh
-# Standard invocation pattern — always use this form when running remotely:
-cd ~/Src/llamaseye && [[ -f .env ]] && source .env; ./llamaseye <flags>
+# Standard invocation — .env is loaded automatically
+cd ~/Src/llamaseye && ./llamaseye <flags>
 ```
-
-If `.env` does not exist yet, the binary will use built-in defaults — but
-paths like `LLAMA_BENCH_BIN` and `SWEEP_OUTPUT_DIR` may need to be passed as flags.
 
 ```sh
 # Single model -- full sweep
-cd ~/Src/llamaseye && [[ -f .env ]] && source .env; ./llamaseye --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ~/Models/bench/sweep
+cd ~/Src/llamaseye && ./llamaseye --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ~/Models/bench/sweep
 
 # All models in a directory
-cd ~/Src/llamaseye && [[ -f .env ]] && source .env; ./llamaseye --models-dir ~/Models --output-dir ~/Models/bench/sweep
+cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/bench/sweep
 
 # Filtered list of models
-cd ~/Src/llamaseye && [[ -f .env ]] && source .env; ./llamaseye --models-dir ~/Models --model-list ~/bench_list.txt --output-dir ~/Models/bench/sweep
+cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --model-list ~/bench_list.txt --output-dir ~/Models/bench/sweep
 
 # With TurboQuant binary (enables turbo2/turbo3/turbo4 KV types)
-cd ~/Src/llamaseye && [[ -f .env ]] && source .env; ./llamaseye --model ~/Models/model.gguf \
+cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf \
   --llama-bench ~/llama.cpp/build/bin/llama-bench \
   --turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench
 
 # Resume an interrupted sweep
-cd ~/Src/llamaseye && [[ -f .env ]] && source .env; ./llamaseye --model ~/Models/model.gguf --resume
+cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf --resume
 
 # Run only specific phases
-cd ~/Src/llamaseye && [[ -f .env ]] && source .env; ./llamaseye --model ~/Models/model.gguf --only-phases 6,7
+cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf --only-phases 6,7
 
 # Unattended overnight
-cd ~/Src/llamaseye && [[ -f .env ]] && source .env
+cd ~/Src/llamaseye
 nohup ./llamaseye --models-dir ~/Models > /dev/null 2>&1 &
 tail -f ~/Models/bench/sweep/sweep.log
 ```
+
+To load a config from a non-default path: `./llamaseye --env-file ~/custom.env <flags>`
 
 ---
 
@@ -193,9 +193,9 @@ documenting every variable.
 ```sh
 # One-time setup on the inference host
 cd ~/Src/llamaseye && cp example.env .env
-# Edit .env to set your paths — it lives alongside the script at ~/Src/llamaseye/.env
-# Source before running (the standard invocation pattern already does this):
-cd ~/Src/llamaseye && [[ -f .env ]] && source .env; bash ~/Src/llamaseye/llamaseye.sh --models-dir ~/Models --output-dir ~/Models/bench/sweep
+# Edit .env to set your paths — it lives alongside the binary at ~/Src/llamaseye/.env
+# The binary auto-loads it; just run from ~/Src/llamaseye/:
+cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/bench/sweep
 ```
 
 `.env` is gitignored — local paths are never committed.

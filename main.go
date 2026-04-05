@@ -9,6 +9,7 @@ import (
 
 	"github.com/justinphilpott/llamaseye/bench"
 	"github.com/justinphilpott/llamaseye/cmd"
+	"github.com/justinphilpott/llamaseye/envfile"
 	"github.com/justinphilpott/llamaseye/hardware"
 	"github.com/justinphilpott/llamaseye/output"
 	"github.com/justinphilpott/llamaseye/sweep"
@@ -22,6 +23,20 @@ func main() {
 }
 
 func run(args []string) error {
+	// Load .env before parsing flags so SWEEP_* vars are visible to config.Defaults().
+	// --env-file is pre-scanned from args; full flag parsing happens in cmd.Parse below.
+	envPath, args := extractEnvFileFlag(args)
+	if envPath != "" {
+		if err := envfile.Load(envPath); err != nil {
+			return fmt.Errorf("--env-file %s: %w", envPath, err)
+		}
+	} else {
+		// Auto-load .env from working directory if present
+		if err := envfile.LoadIfExists(".env"); err != nil {
+			return fmt.Errorf(".env: %w", err)
+		}
+	}
+
 	cfg, models, err := cmd.Parse(args)
 	if err != nil {
 		return err
@@ -120,6 +135,27 @@ func run(args []string) error {
 
 	logger.Log("All sweeps complete.")
 	return nil
+}
+
+// extractEnvFileFlag scans args for --env-file <path> or --env-file=<path>,
+// removes those tokens from the slice, and returns the path and remaining args.
+func extractEnvFileFlag(args []string) (path string, remaining []string) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--env-file" && i+1 < len(args) {
+			path = args[i+1]
+			remaining = append(remaining, args[:i]...)
+			remaining = append(remaining, args[i+2:]...)
+			return
+		}
+		if strings.HasPrefix(arg, "--env-file=") {
+			path = strings.TrimPrefix(arg, "--env-file=")
+			remaining = append(remaining, args[:i]...)
+			remaining = append(remaining, args[i+1:]...)
+			return
+		}
+	}
+	return "", args
 }
 
 func stemOf(path string) string {
