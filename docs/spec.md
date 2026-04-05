@@ -393,7 +393,10 @@ GPU layers than VRAM can hold. `max_ngl` bounds all subsequent sweeps.
 **Algorithm:**
 
 ```
-ngl = 99
+num_layers = parse_gguf_num_layers(model)   # 0 if unavailable
+start_ngl  = num_layers if num_layers > 0 else 99
+
+ngl = start_ngl
 while ngl >= 0:
     run: llama-bench -m {model} -ngl {ngl} -p 64 -n 0 -r 1 --progress
     if SUCCESS:
@@ -406,6 +409,8 @@ while ngl >= 0:
 if ngl < 0:
     ABORT: "Model cannot be loaded at any ngl value on this hardware."
 ```
+
+**NGL ceiling from GGUF metadata:** GGUF metadata is parsed at sweep start to read `general.block_count` (the model's layer count). Phase 0 starts its probe at `min(99, num_layers)` rather than a hardcoded 99 — for a 36-layer model this saves up to 15 wasted OOM probe runs. Falls back to 99 if GGUF parsing fails.
 
 Use `-p 64 -n 0 -r 1`: a minimal prompt-only single-rep run. Enough to confirm
 the model loads; speed and accuracy do not matter here.
@@ -436,9 +441,12 @@ fa=0, ctk=f16, ctv=f16, nkvo=0, threads=system-default, b=2048, ub=512
 
 Build the full ngl list as:
 ```
-[0] + [4, 8, 12, ..., max_ngl - (max_ngl % 4)] + [max_ngl]
+ceiling = min(max_ngl, num_layers)   # num_layers from GGUF; 0 means unknown → use max_ngl
+[0] + [4, 8, 12, ..., ceiling - (ceiling % 4)] + [ceiling]
 ```
-Deduplicate and sort ascending. Always include `0` and `max_ngl` explicitly.
+Deduplicate and sort ascending. Always include `0` and `ceiling` explicitly.
+
+NGL values above `num_layers` are functionally identical (llama.cpp silently clamps NGL to the model's actual layer count), so the list is capped there. This keeps the Phase 1 working set small and prevents Phase 7's cartesian product from inflating with redundant values.
 
 **Smart default start:** By default, Phase 1 begins at `max_ngl − 2×step`
 rather than `0`, testing only the top ~3 values near the VRAM ceiling. Low-ngl

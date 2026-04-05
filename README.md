@@ -229,8 +229,8 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 
 | Phase | Name | What varies | Everything else |
 |-------|------|-------------|-----------------|
-| 0 | **NGL Probe** | Binary search for max stable GPU layers | Defaults — establishes MAX_NGL |
-| 1 | **NGL Axis** | NGL near MAX_NGL by default (use `--start-ngl 0` for full sweep) | Defaults |
+| 0 | **NGL Probe** | Binary search for max stable GPU layers — starts at model's layer count (from GGUF metadata), falls back to 99 | Defaults — establishes MAX_NGL |
+| 1 | **NGL Axis** | NGL values up to model's layer count (capped there since higher values are identical); near MAX_NGL by default (use `--start-ngl 0` for full sweep) | Defaults |
 | 2 | **FA + KV Quant Axis** | Flash attention on/off × KV cache type | Best NGL from Phase 1 |
 | 3 | **Thread Count** | CPU thread count variants | Best NGL, best FA/KV |
 | 4 | **KV Offload** | KV cache in VRAM (nkvo=0) vs RAM (nkvo=1) | Best NGL, best FA/KV, best threads |
@@ -243,6 +243,15 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 ## Smart defaults
 
 Common use cases work without any extra flags. The key smart behaviors:
+
+### Phase 0/1 — NGL ceiling capped at model layer count
+
+At sweep start, llamaseye reads the model's layer count from its GGUF metadata. NGL values above that count are functionally identical (llama.cpp silently clamps NGL to the layer count), so:
+
+- **Phase 0** starts its probe at `NumLayers` instead of 99 — eliminating up to 15 wasted probe runs for small models
+- **Phase 1** caps its sweep list at `NumLayers` — shrinking the NGL working set and keeping Phase 7's cartesian product manageable
+
+If GGUF parsing fails (non-standard file), both phases fall back to the 99 ceiling.
 
 ### Phase 1 — NGL start
 

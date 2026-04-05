@@ -372,8 +372,8 @@ ssh user@inference-host "cd ~/Src/llamaseye && cp example.env .env"
 
 | Phase | Name | What it sweeps | When to skip |
 |-------|------|----------------|--------------|
-| 0 | NGL probe | Finds `max_ngl` — how many layers fit in VRAM | Never; required |
-| 1 | NGL axis | GPU layer count 0 → `max_ngl` | Only if offload situation already known |
+| 0 | NGL probe | Finds `max_ngl` — starts probe at model's layer count (from GGUF), falls back to 99 | Never; required |
+| 1 | NGL axis | GPU layer count 0 → `min(max_ngl, num_layers)` — capped at actual layer count (higher values are identical) | Only if offload situation already known |
 | 2 | FA + KV quant | FA on/off × KV types (f16, q8_0, q4_0, turbo2–turbo4) | If KV choice already settled |
 | 3 | Thread count | CPU threads 1 → HW_CPU_LOGICAL | If no CPU offload layers |
 | 4 | KV offload (nkvo) | KV cache in VRAM vs RAM | If nkvo behaviour already known |
