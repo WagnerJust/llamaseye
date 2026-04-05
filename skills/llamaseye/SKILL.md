@@ -35,36 +35,49 @@ description: >
 | llama-bench (standard) | `~/llama.cpp/build/bin/llama-bench` |
 | llama-bench (TurboQuant) | `~/llama-cpp-turboquant/build/bin/llama-bench` |
 | llamaseye script | `~/Src/llamaseye/llamaseye.sh` (cloned via git) |
+| llamaseye .env | `~/Src/llamaseye/.env` (local config, gitignored) |
 
-**Local repo:** `/path/to/llamaseye/llamaseye.sh`
+**Local repo:** `/Users/justin/Side/llamaseye/llamaseye.sh`
 
 ---
 
 ## Running a Sweep
 
+**IMPORTANT — always source `.env` first.** The script does not auto-load `.env`.
+Before every invocation, check whether `~/Src/llamaseye/.env` exists and source it:
+
+```sh
+# Standard invocation pattern — always use this form when running remotely:
+cd ~/Src/llamaseye && [[ -f .env ]] && source .env; bash ~/Src/llamaseye/llamaseye.sh <flags>
+```
+
+If `.env` does not exist yet, the script will still run using built-in defaults — but
+paths like `LLAMA_BENCH_BIN` and `SWEEP_OUTPUT_DIR` may need to be passed as flags.
+
 ```sh
 # Single model -- full sweep
-bash ~/llamaseye.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ~/Models/bench/sweep
+cd ~/Src/llamaseye && [[ -f .env ]] && source .env; bash ~/Src/llamaseye/llamaseye.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ~/Models/bench/sweep
 
 # All models in a directory
-bash ~/llamaseye.sh --models-dir ~/Models --output-dir ~/Models/bench/sweep
+cd ~/Src/llamaseye && [[ -f .env ]] && source .env; bash ~/Src/llamaseye/llamaseye.sh --models-dir ~/Models --output-dir ~/Models/bench/sweep
 
 # Filtered list of models
-bash ~/llamaseye.sh --models-dir ~/Models --model-list ~/bench_list.txt --output-dir ~/Models/bench/sweep
+cd ~/Src/llamaseye && [[ -f .env ]] && source .env; bash ~/Src/llamaseye/llamaseye.sh --models-dir ~/Models --model-list ~/bench_list.txt --output-dir ~/Models/bench/sweep
 
 # With TurboQuant binary (enables turbo2/turbo3/turbo4 KV types)
-bash ~/llamaseye.sh --model ~/Models/model.gguf \
+cd ~/Src/llamaseye && [[ -f .env ]] && source .env; bash ~/Src/llamaseye/llamaseye.sh --model ~/Models/model.gguf \
   --llama-bench ~/llama.cpp/build/bin/llama-bench \
   --turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench
 
 # Resume an interrupted sweep
-bash ~/llamaseye.sh --model ~/Models/model.gguf --resume
+cd ~/Src/llamaseye && [[ -f .env ]] && source .env; bash ~/Src/llamaseye/llamaseye.sh --model ~/Models/model.gguf --resume
 
 # Run only specific phases
-bash ~/llamaseye.sh --model ~/Models/model.gguf --only-phases 6,7
+cd ~/Src/llamaseye && [[ -f .env ]] && source .env; bash ~/Src/llamaseye/llamaseye.sh --model ~/Models/model.gguf --only-phases 6,7
 
 # Unattended overnight
-nohup bash ~/llamaseye.sh --models-dir ~/Models > /dev/null 2>&1 &
+cd ~/Src/llamaseye && [[ -f .env ]] && source .env
+nohup bash ~/Src/llamaseye/llamaseye.sh --models-dir ~/Models > /dev/null 2>&1 &
 tail -f ~/Models/bench/sweep/sweep.log
 ```
 
@@ -180,9 +193,10 @@ documenting every variable.
 
 ```sh
 # One-time setup on the inference host
-cp example.env .env
-# Edit .env to set your paths, then source before running:
-source .env && bash llamaseye.sh --models-dir ~/Models --output-dir ~/Models/bench/sweep
+cd ~/Src/llamaseye && cp example.env .env
+# Edit .env to set your paths — it lives alongside the script at ~/Src/llamaseye/.env
+# Source before running (the standard invocation pattern already does this):
+cd ~/Src/llamaseye && [[ -f .env ]] && source .env; bash ~/Src/llamaseye/llamaseye.sh --models-dir ~/Models --output-dir ~/Models/bench/sweep
 ```
 
 `.env` is gitignored — local paths are never committed.
@@ -335,10 +349,24 @@ Pass to llamaseye via `--turbo-bench ~/llama-cpp-turboquant/build/bin/llama-benc
 
 ### Step 4 — Deploy llamaseye script
 
+The script is maintained as a git clone at `~/Src/llamaseye/` on the remote host.
+To update it, pull the latest from the remote host:
+
 ```sh
-# SCP the script to the remote host
-scp /path/to/llamaseye/llamaseye.sh user@inference-host:~/llamaseye.sh
-ssh user@inference-host "chmod +x ~/llamaseye.sh"
+ssh user@inference-host "cd ~/Src/llamaseye && git pull"
+```
+
+If the repo is not yet cloned:
+
+```sh
+ssh user@inference-host "mkdir -p ~/Src && git clone https://github.com/jwagnerhki/llamaseye ~/Src/llamaseye"
+```
+
+After cloning, set up `.env`:
+
+```sh
+ssh user@inference-host "cd ~/Src/llamaseye && cp example.env .env"
+# Then edit ~/Src/llamaseye/.env on the remote host to set paths
 ```
 
 ## Phase Reference
