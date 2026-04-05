@@ -1,0 +1,363 @@
+package phase
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/justinphilpott/llamaseye/bench"
+	"github.com/justinphilpott/llamaseye/state"
+)
+
+// GoalConfig holds the parsed goal specification for phase 7.
+type GoalConfig struct {
+	CtxMin  int
+	TGMin   float64
+	PPMin   float64
+	MaxHits int // stop after this many goal-satisfying configs (default 3)
+}
+
+// P7CombinationMatrix runs the cartesian product of all working sets.
+type P7CombinationMatrix struct {
+	Goal *GoalConfig // nil = exhaustive mode
+}
+
+func (P7CombinationMatrix) ID() int       { return 7 }
+func (P7CombinationMatrix) Label() string { return "combination_matrix" }
+
+func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
+	env.Logger.Log("[Phase 7] Full combination matrix")
+
+	// Auto-derive Phase 7 minimums
+	effMinNGL := derivedMinNGL(env)
+	effMinThreads := derivedMinThreads(env)
+	effMinCtx := derivedMinCtx(env, p.Goal)
+	effMinB := derivedMinB(env)
+	effMinCTK := derivedMinCTK(env)
+
+	// Apply minimums to working sets
+	nglP7 := ApplyPhase7MinsInt("ngl", env.WS.NGL, effMinNGL,
+		func(f string, a ...any) { env.Logger.Warn(f, a...) })
+	ctxP7 := ApplyPhase7MinsInt("ctx", env.WS.CTX, effMinCtx,
+		func(f string, a ...any) { env.Logger.Warn(f, a...) })
+	bubP7 := filterBUBByMinB(env.WS.BUB, effMinB)
+	if len(bubP7) == 0 {
+		bubP7 = env.WS.BUB
+	}
+
+	// Thread working set
+	threadP7 := filterThreadsByMin(env.WS.Threads, effMinThreads)
+
+	// CTK values from WS.FACTK, filtered by min-ctk
+	ctkValues := uniqueCTKValues(env.WS.FACTK)
+	ctkValues = ApplyPhase7MinsCTK(ctkValues, effMinCTK,
+		func(f string, a ...any) { env.Logger.Warn(f, a...) })
+
+	nkvoP7 := env.WS.NKVO
+
+	// Bail if nothing to test
+	if len(ctxP7) == 0 {
+		env.Logger.Warn("[Phase 7] No ctx values passed the minimum filter (min-ctx=%v). Phase 7 skipped.", effMinCtx)
+		env.Logger.Warn("[Phase 7] To run Phase 7, lower or remove --min-ctx / --start-ctx, or re-run Phase 6 with a lower --start-ctx.")
+		return nil
+	}
+
+	// Goal mode: sort NGL descending
+	if p.Goal != nil {
+		sortIntsDesc(nglP7)
+		env.Logger.Log("[Phase 7] Goal mode: ctx≥%d tg≥%.1f pp≥%.1f — stopping after %d validated configs",
+			p.Goal.CtxMin, p.Goal.TGMin, p.Goal.PPMin, p.Goal.MaxHits)
+	}
+
+	// Estimate total combinations
+	faCtkCount := countFACTKWithCTK(env.WS.FACTK, ctkValues)
+	total := len(nglP7) * faCtkCount * len(threadP7) * len(nkvoP7) * len(bubP7) * len(ctxP7)
+	env.Logger.Log("[Phase 7] Estimated combinations: %d (ngl×%d fa_ctk×%d threads×%d nkvo×%d b_ub×%d ctx×%d)",
+		total, len(nglP7), faCtkCount, len(threadP7), len(nkvoP7), len(bubP7), len(ctxP7))
+
+	// Context OOM ceiling cache: key = "ngl_ctk_nkvo"
+	ctxCeil := make(map[string]int)
+
+	runCount := 0
+	goalHits := 0
+	goalDone := false
+
+	for _, ngl := range nglP7 {
+		if goalDone {
+			break
+		}
+		for _, factkCombo := range env.WS.FACTK {
+			if goalDone {
+				break
+			}
+			if !containsStr(ctkValues, factkCombo.CTK) {
+				continue
+			}
+			for _, nkvo := range nkvoP7 {
+				if goalDone {
+					break
+				}
+				for _, threadVal := range threadP7 {
+					if goalDone {
+						break
+					}
+					for _, bub := range bubP7 {
+						if goalDone {
+							break
+						}
+						if bub.UB > bub.B {
+							continue
+						}
+						for _, ctxVal := range ctxP7 {
+							if goalDone {
+								break
+							}
+
+							// Context ceiling pruning
+							ceilKey := fmt.Sprintf("%d_%s_%d", ngl, factkCombo.CTK, nkvo)
+							if maxOK, found := ctxCeil[ceilKey]; found && ctxVal > maxOK {
+								env.Logger.Log("[Phase 7] Skip ctx=%d for ngl=%d/ctk=%s/nkvo=%d (OOM ceiling: %d)",
+									ctxVal, ngl, factkCombo.CTK, nkvo, maxOK)
+								continue
+							}
+
+							select {
+							case <-ctx.Done():
+								return ctx.Err()
+							default:
+							}
+
+							label := fmt.Sprintf("p7/ngl=%d_fa=%d_ctk=%s_nkvo=%d_b=%d_ub=%d_ctx=%d",
+								ngl, factkCombo.FA, factkCombo.CTK, nkvo, bub.B, bub.UB, ctxVal)
+
+							var threads *int
+							switch t := threadVal.(type) {
+							case int:
+								tc := t
+								threads = &tc
+							}
+
+							status, tg, pp := RecordAndTrack(env, label, bench.RunParams{
+								NGL:        ngl,
+								FA:         factkCombo.FA,
+								CTK:        factkCombo.CTK,
+								CTV:        factkCombo.CTV,
+								NKVO:       nkvo,
+								Threads:    threads,
+								B:          bub.B,
+								UB:         bub.UB,
+								NPrompt:    ctxVal,
+								NGen:       128,
+								Reps:       env.Config.Repetitions,
+								Phase:      7,
+								PhaseLabel: "combination_matrix",
+							})
+
+							runCount++
+							if runCount%10 == 0 {
+								env.Logger.Log("[Phase 7] %d/%d combinations run", runCount, total)
+							}
+
+							if status == bench.StatusOOM || status == bench.StatusTimeout {
+								// Record ceiling
+								ceil := ctxVal / 2
+								if ceil < 128 {
+									ceil = 0
+								}
+								if existing, found := ctxCeil[ceilKey]; !found || ctxVal < existing {
+									ctxCeil[ceilKey] = ceil
+								}
+							}
+
+							// Goal mode check
+							if p.Goal != nil && status == bench.StatusOK {
+								meetsGoal := true
+								if p.Goal.CtxMin > 0 && ctxVal < p.Goal.CtxMin {
+									meetsGoal = false
+								}
+								if meetsGoal && p.Goal.TGMin > 0 && tg < p.Goal.TGMin {
+									meetsGoal = false
+								}
+								if meetsGoal && p.Goal.PPMin > 0 && pp < p.Goal.PPMin {
+									meetsGoal = false
+								}
+								if meetsGoal {
+									goalHits++
+									env.Logger.Log("[Phase 7] Goal met (%d/%d): ngl=%d ctk=%s nkvo=%d ctx=%d",
+										goalHits, p.Goal.MaxHits, ngl, factkCombo.CTK, nkvo, ctxVal)
+									if goalHits >= p.Goal.MaxHits {
+										env.Logger.Log("[Phase 7] Goal satisfied — stopping early after %d combinations", runCount)
+										goalDone = true
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if p.Goal != nil {
+		env.Logger.Log("[Phase 7] Complete — %d combinations run, %d/%d goal configs found",
+			runCount, goalHits, p.Goal.MaxHits)
+	} else {
+		env.Logger.Log("[Phase 7] Complete — %d combinations run", runCount)
+	}
+	return nil
+}
+
+// derivedMinNGL returns effective min-ngl for Phase 7.
+func derivedMinNGL(env *PhaseEnv) *int {
+	if env.Config.MinNGL != nil {
+		return env.Config.MinNGL
+	}
+	step := env.Config.NGLStep
+	min := env.MaxNGL - step
+	if min < 0 {
+		min = 0
+	}
+	env.Logger.Log("[Phase 7] Auto min-ngl=%d (max_ngl=%d − 1 step); override with --min-ngl", min, env.MaxNGL)
+	return &min
+}
+
+func derivedMinThreads(env *PhaseEnv) *int {
+	if env.Config.MinThreads != nil {
+		return env.Config.MinThreads
+	}
+	if env.HW.CPUPhysical <= 1 {
+		return nil
+	}
+	min := env.HW.CPUPhysical
+	env.Logger.Log("[Phase 7] Auto min-threads=%d (physical cores); override with --min-threads", min)
+	return &min
+}
+
+func derivedMinCtx(env *PhaseEnv, goal *GoalConfig) *int {
+	if env.Config.MinCtx != nil {
+		return env.Config.MinCtx
+	}
+	var min int
+	if env.Config.StartCtx != nil {
+		min = *env.Config.StartCtx
+		env.Logger.Log("[Phase 7] Auto min-ctx=%d (inherited from --start-ctx); override with --min-ctx", min)
+	} else {
+		min = 8192
+		env.Logger.Log("[Phase 7] Auto min-ctx=%d (default minimum; override with --min-ctx N or SWEEP_MIN_CTX=N)", min)
+	}
+	// Goal ctx acts as a floor
+	if goal != nil && goal.CtxMin > min {
+		min = goal.CtxMin
+		env.Logger.Log("[Phase 7] Goal ctx≥%d applied as min-ctx floor", min)
+	}
+	return &min
+}
+
+func derivedMinB(env *PhaseEnv) *int {
+	if env.Config.MinB != nil {
+		return env.Config.MinB
+	}
+	if env.Best.B <= 0 {
+		return nil
+	}
+	min := env.Best.B / 2
+	if min < 512 {
+		min = 512
+	}
+	env.Logger.Log("[Phase 7] Auto min-b=%d (best_b=%d / 2); override with --min-b", min, env.Best.B)
+	return &min
+}
+
+func derivedMinCTK(env *PhaseEnv) string {
+	if env.Config.MinCTK != "" {
+		return env.Config.MinCTK
+	}
+	// TODO: would need to read sweep.jsonl for phase 6 OOM count
+	// For now use q8_0 as default (bash behavior for timeout/clean)
+	ctk := "q8_0"
+	env.Logger.Log("[Phase 7] Auto min-ctk=%s (default); override with --min-ctk", ctk)
+	return ctk
+}
+
+// uniqueCTKValues extracts unique ctk strings from the FACTK working set.
+func uniqueCTKValues(ws []state.FACTKCombo) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, c := range ws {
+		if !seen[c.CTK] {
+			seen[c.CTK] = true
+			result = append(result, c.CTK)
+		}
+	}
+	return result
+}
+
+func filterBUBByMinB(bubs []state.BUBCombo, minB *int) []state.BUBCombo {
+	if minB == nil {
+		return bubs
+	}
+	var result []state.BUBCombo
+	for _, v := range bubs {
+		if v.B >= *minB {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+func filterThreadsByMin(threads []any, minThreads *int) []any {
+	if minThreads == nil {
+		return threads
+	}
+	var result []any
+	for _, v := range threads {
+		switch t := v.(type) {
+		case int:
+			if t >= *minThreads {
+				result = append(result, v)
+			}
+		case float64:
+			if int(t) >= *minThreads {
+				result = append(result, v)
+			}
+		case string:
+			result = append(result, v) // "system_default" always passes
+		}
+	}
+	return result
+}
+
+func countFACTKWithCTK(ws []state.FACTKCombo, ctkValues []string) int {
+	count := 0
+	ctkSet := make(map[string]bool)
+	for _, v := range ctkValues {
+		ctkSet[v] = true
+	}
+	for _, c := range ws {
+		if ctkSet[c.CTK] {
+			count++
+		}
+	}
+	if count == 0 {
+		return 1
+	}
+	return count
+}
+
+func sortIntsDesc(s []int) {
+	for i := 0; i < len(s)-1; i++ {
+		for j := i + 1; j < len(s); j++ {
+			if s[j] > s[i] {
+				s[i], s[j] = s[j], s[i]
+			}
+		}
+	}
+}
+
+func containsStr(s []string, v string) bool {
+	for _, elem := range s {
+		if elem == v {
+			return true
+		}
+	}
+	return false
+}

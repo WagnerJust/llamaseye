@@ -16,29 +16,34 @@ The script is fully portable: it detects CPU core count, available RAM, GPU VRAM
 
 ## Quick start
 
+**Build the binary (Go 1.22+):**
+```bash
+go build -o llamaseye .
+```
+
 **Single model:**
 ```bash
-bash llamaseye.sh --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ./results
+./llamaseye --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ./results
 ```
 
 **All models in a directory:**
 ```bash
-bash llamaseye.sh --models-dir ~/Models --output-dir ./results
+./llamaseye --models-dir ~/Models --output-dir ./results
 ```
 
 **From a model list file:**
 ```bash
-bash llamaseye.sh --models-dir ~/Models --model-list my_models.txt --output-dir ./results
+./llamaseye --models-dir ~/Models --model-list my_models.txt --output-dir ./results
 ```
 
 **With TurboQuant KV types:**
 ```bash
-bash llamaseye.sh --model ~/Models/model.gguf --turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench
+./llamaseye --model ~/Models/model.gguf --turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench
 ```
 
 **Unattended overnight run:**
 ```bash
-nohup bash llamaseye.sh --models-dir ~/Models --output-dir ./results > /dev/null 2>&1 &
+nohup ./llamaseye --models-dir ~/Models --output-dir ./results > /dev/null 2>&1 &
 ```
 
 
@@ -49,12 +54,28 @@ All environment variables can be set in a `.env` file instead of passing flags e
 ```sh
 cp example.env .env
 # Edit .env to match your paths and preferences
-source .env && bash llamaseye.sh --models-dir ~/Models
+source .env && ./llamaseye --models-dir ~/Models
 ```
 
 Every CLI flag has a corresponding environment variable — env vars set the default value, and CLI flags override them when both are provided. `example.env` in the repo root documents every available variable with its default value and a description. The most important ones to set are `LLAMA_BENCH_BIN` (path to your llama-bench binary) and `SWEEP_OUTPUT_DIR` (where results are written).
 
 `.env` is gitignored — your local paths and configuration will not be committed.
+
+---
+
+## Building
+
+llamaseye is a single Go binary with no runtime dependencies beyond the OS. Requires Go 1.22 or later.
+
+```bash
+# Build
+go build -o llamaseye .
+
+# Optionally install into your PATH
+go install github.com/justinphilpott/llamaseye@latest
+```
+
+The binary statically links all dependencies. No external tools are required at runtime except `llama-bench` itself.
 
 ---
 
@@ -100,18 +121,17 @@ cmake --build build --config Release --target llama-bench -j$(nproc)
 
 llamaseye verifies the binary at startup by probing it with `-ctk turbo3`. If the flag is accepted, turbo types are enabled. If the path is missing or the flag is rejected, turbo types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — the script handles an invalid path gracefully.
 
-### Other dependencies
+### Optional system tools
+
+The Go binary uses native OS APIs for hardware detection and thermal monitoring. A few optional tools extend these capabilities:
 
 | Tool | Purpose | Install |
 |------|---------|---------|
-| `jq` | JSON record processing | `apt install jq` / `brew install jq` |
-| `timeout` | Per-run kill timeout | Built into GNU coreutils (Linux); `brew install coreutils` on macOS |
-| `uuidgen` | Unique run IDs | Pre-installed on macOS; `apt install uuid-runtime` on Linux |
-| `nvidia-smi` | NVIDIA GPU detection and thermal monitoring | Included with NVIDIA drivers |
+| `nvidia-smi` | NVIDIA GPU VRAM/temp detection | Included with NVIDIA drivers |
 | `sensors` | Linux CPU temperature reading | `apt install lm-sensors` |
 | `osx-cpu-temp` | macOS CPU temperature reading (optional) | `brew install osx-cpu-temp` |
 
-`nvidia-smi`, `sensors`, and `osx-cpu-temp` are only needed for thermal monitoring. If they are absent, llamaseye disables the thermal guard for that sensor and logs a warning — the sweep still runs.
+If these are absent, llamaseye disables the corresponding thermal guard and logs a warning — the sweep still runs.
 
 ---
 
@@ -209,8 +229,8 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 
 | Phase | Name | What varies | Everything else |
 |-------|------|-------------|-----------------|
-| 0 | **NGL Probe** | Binary search for max stable GPU layers | Defaults — establishes MAX_NGL |
-| 1 | **NGL Axis** | NGL near MAX_NGL by default (use `--start-ngl 0` for full sweep) | Defaults |
+| 0 | **NGL Probe** | Binary search for max stable GPU layers — starts at model's layer count (from GGUF metadata), falls back to 99 | Defaults — establishes MAX_NGL |
+| 1 | **NGL Axis** | NGL values up to model's layer count (capped there since higher values are identical); near MAX_NGL by default (use `--start-ngl 0` for full sweep) | Defaults |
 | 2 | **FA + KV Quant Axis** | Flash attention on/off × KV cache type | Best NGL from Phase 1 |
 | 3 | **Thread Count** | CPU thread count variants | Best NGL, best FA/KV |
 | 4 | **KV Offload** | KV cache in VRAM (nkvo=0) vs RAM (nkvo=1) | Best NGL, best FA/KV, best threads |
@@ -223,6 +243,15 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 ## Smart defaults
 
 Common use cases work without any extra flags. The key smart behaviors:
+
+### Phase 0/1 — NGL ceiling capped at model layer count
+
+At sweep start, llamaseye reads the model's layer count from its GGUF metadata. NGL values above that count are functionally identical (llama.cpp silently clamps NGL to the layer count), so:
+
+- **Phase 0** starts its probe at `NumLayers` instead of 99 — eliminating up to 15 wasted probe runs for small models
+- **Phase 1** caps its sweep list at `NumLayers` — shrinking the NGL working set and keeping Phase 7's cartesian product manageable
+
+If GGUF parsing fails (non-standard file), both phases fall back to the 99 ceiling.
 
 ### Phase 1 — NGL start
 

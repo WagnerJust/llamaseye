@@ -1,0 +1,231 @@
+package phase
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/justinphilpott/llamaseye/bench"
+)
+
+// P6CtxSweep sweeps context window sizes with OOM fallback logic.
+type P6CtxSweep struct{}
+
+func (P6CtxSweep) ID() int       { return 6 }
+func (P6CtxSweep) Label() string { return "ctx_sweep" }
+
+var fullCTXList = []int{128, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072}
+
+func (P6CtxSweep) Run(ctx context.Context, env *PhaseEnv) error {
+	env.Logger.Log("[Phase 6] Context size sweep")
+
+	ctxList := applyCtxAxisOpts(env)
+
+	// CTK quality order for fallbacks (most to least compressed = index 0 is most compressed)
+	ctkQualityOrder := []string{"turbo2", "turbo3", "turbo4", "q4_0", "q8_0", "f16"}
+	bestCTKIdx := len(ctkQualityOrder) - 1 // default = f16
+	for i, v := range ctkQualityOrder {
+		if v == env.Best.CTK {
+			bestCTKIdx = i
+			break
+		}
+	}
+
+	env.WS.CTX = nil
+	env.Best.CTX = 128
+
+	for _, ctxVal := range ctxList {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		result := p6TryCtx(ctx, env, ctxVal, ctkQualityOrder, bestCTKIdx)
+
+		if result == "ok" {
+			continue
+		}
+		if result == "timeout" {
+			env.Logger.Log("[Phase 6] Stopping at ctx=%d (timeout)", ctxVal)
+			break
+		}
+
+		// All fallbacks failed — optionally bisect
+		if env.Config.FineCtx && env.Best.CTX > 0 {
+			hi := ctxVal
+			minStep := env.Config.CtxStepMin
+			env.Logger.Log("[Phase 6] Bisecting between ctx=%d and ctx=%d (step-min=%d)",
+				env.Best.CTX, hi, minStep)
+
+		bisectLoop:
+			for hi-env.Best.CTX > minStep {
+				mid := ((env.Best.CTX + hi) / 2)
+				// Round to nearest 512
+				mid = (mid+256)/512*512
+				if mid <= env.Best.CTX || mid >= hi {
+					break
+				}
+				env.Logger.Log("[Phase 6] Bisect probe: ctx=%d (range %d–%d)", mid, env.Best.CTX, hi)
+				bisectResult := p6TryCtx(ctx, env, mid, ctkQualityOrder, bestCTKIdx)
+				switch bisectResult {
+				case "ok":
+					// BEST_CTX updated by p6TryCtx
+				case "timeout":
+					env.Logger.Log("[Phase 6] Bisect: timeout at ctx=%d — stopping", mid)
+					break bisectLoop
+				default:
+					hi = mid
+				}
+			}
+			env.Logger.Log("[Phase 6] Bisect complete — best ctx: %d", env.Best.CTX)
+		}
+		break
+	}
+
+	if len(env.WS.CTX) == 0 {
+		if env.Config.StartCtx != nil {
+			env.Logger.Warn("[Phase 6] No context ≥ %d succeeded. WS_CTX will be empty — Phase 7 will produce 0 combinations for ctx.",
+				*env.Config.StartCtx)
+			env.Logger.Warn("[Phase 6] To include smaller contexts, re-run with --start-ctx lowered or omitted.")
+		} else {
+			env.WS.CTX = []int{512}
+		}
+	}
+	env.Logger.Log("[Phase 6] Best (max) context: %d  Working set: %v",
+		env.Best.CTX, env.WS.CTX)
+	return nil
+}
+
+// p6TryCtx tries the primary config at ctx, then fallbacks if it fails.
+// Returns "ok", "timeout", or "fail".
+func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
+	ctkOrder []string, bestCTKIdx int) string {
+
+	// Primary config
+	status, _, _ := RecordAndTrack(env, fmt.Sprintf("phase6/ctx=%d", ctxVal), bench.RunParams{
+		NGL:        env.Best.NGL,
+		FA:         env.Best.FA,
+		CTK:        env.Best.CTK,
+		CTV:        env.Best.CTV,
+		Threads:    env.Best.Threads,
+		NKVO:       env.Best.NKVO,
+		B:          env.Best.B,
+		UB:         env.Best.UB,
+		NPrompt:    ctxVal,
+		NGen:       0,
+		Reps:       2,
+		Phase:      6,
+		PhaseLabel: "ctx_sweep",
+	})
+
+	if status == bench.StatusOK || status == bench.StatusDryRun {
+		env.WS.CTX = appendIfMissing(env.WS.CTX, ctxVal)
+		env.Best.CTX = ctxVal
+		return "ok"
+	}
+	if status == bench.StatusTimeout {
+		return "timeout"
+	}
+
+	// OOM or error — try fallbacks
+	env.Logger.Log("[Phase 6] ctx=%d failed (%s) with best config — trying fallbacks", ctxVal, status)
+
+	type fallback struct {
+		FA   int
+		CTK  string
+		CTV  string
+		NKVO int
+	}
+
+	var fallbacks []fallback
+
+	// Part 1: nkvo flip
+	altNKVO := 1 - env.Best.NKVO
+	if containsInt(env.WS.NKVO, altNKVO) {
+		fallbacks = append(fallbacks, fallback{
+			FA:   env.Best.FA,
+			CTK:  env.Best.CTK,
+			CTV:  env.Best.CTV,
+			NKVO: altNKVO,
+		})
+	}
+
+	// Part 2: more-compressed ctk types
+	for i := 0; i < bestCTKIdx; i++ {
+		fbCTK := ctkOrder[i]
+		if strings.HasPrefix(fbCTK, "turbo") && !env.Runner.Selector.TurboAvailable {
+			continue
+		}
+		fa, ctv, found := BestFACTVForCTK(env.WS.FACTK, fbCTK)
+		if !found {
+			continue
+		}
+		for _, nkvoFB := range []int{0, 1} {
+			if !containsInt(env.WS.NKVO, nkvoFB) {
+				continue
+			}
+			fallbacks = append(fallbacks, fallback{
+				FA:   fa,
+				CTK:  fbCTK,
+				CTV:  ctv,
+				NKVO: nkvoFB,
+			})
+		}
+	}
+
+	for _, fb := range fallbacks {
+		select {
+		case <-ctx.Done():
+			return "timeout"
+		default:
+		}
+
+		label := fmt.Sprintf("phase6/ctx=%d/nkvo=%d_ctk=%s", ctxVal, fb.NKVO, fb.CTK)
+		fbStatus, _, _ := RecordAndTrack(env, label, bench.RunParams{
+			NGL:        env.Best.NGL,
+			FA:         fb.FA,
+			CTK:        fb.CTK,
+			CTV:        fb.CTV,
+			Threads:    env.Best.Threads,
+			NKVO:       fb.NKVO,
+			B:          env.Best.B,
+			UB:         env.Best.UB,
+			NPrompt:    ctxVal,
+			NGen:       0,
+			Reps:       2,
+			Phase:      6,
+			PhaseLabel: "ctx_sweep",
+		})
+		if fbStatus == bench.StatusOK {
+			env.Logger.Log("[Phase 6] ctx=%d succeeded with fallback nkvo=%d ctk=%s",
+				ctxVal, fb.NKVO, fb.CTK)
+			env.WS.CTX = appendIfMissing(env.WS.CTX, ctxVal)
+			env.Best.CTX = ctxVal
+			return "ok"
+		}
+		// continue through all fallbacks (timeout on one doesn't predict others)
+	}
+
+	return "fail"
+}
+
+func applyCtxAxisOpts(env *PhaseEnv) []int {
+	var startStr string
+	if env.Config.StartCtx != nil {
+		startStr = itoa(*env.Config.StartCtx)
+	}
+	strList := intSliceToStrings(fullCTXList)
+	filtered := ApplyAxisOpts(strList, startStr, env.Config.DirCtx,
+		func(f string, a ...any) { env.Logger.Warn(f, a...) })
+	return stringsToIntSlice(filtered)
+}
+
+func appendIfMissing(slice []int, val int) []int {
+	for _, v := range slice {
+		if v == val {
+			return slice
+		}
+	}
+	return append(slice, val)
+}
