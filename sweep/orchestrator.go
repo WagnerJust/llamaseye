@@ -172,7 +172,7 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 	}
 
 	// Generate markdown
-	if err := output.GenerateMarkdown(outputDir, modelStem, s.Config.Goal, s.Config.TimeoutSec); err != nil {
+	if err := output.GenerateMarkdown(outputDir, modelStem, s.Config.Goal, s.Config.GoalSort, s.Config.TimeoutSec); err != nil {
 		s.Logger.Warn("generate markdown: %v", err)
 	}
 
@@ -203,7 +203,7 @@ func (s *Sweeper) ReportMode(stems []string) error {
 	}
 	for _, stem := range stems {
 		dir := filepath.Join(s.Config.OutputDir, stem)
-		if err := output.GenerateMarkdown(dir, stem, s.Config.Goal, s.Config.TimeoutSec); err != nil {
+		if err := output.GenerateMarkdown(dir, stem, s.Config.Goal, s.Config.GoalSort, s.Config.TimeoutSec); err != nil {
 			s.Logger.Warn("generate markdown for %s: %v", stem, err)
 			continue
 		}

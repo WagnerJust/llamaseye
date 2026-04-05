@@ -237,6 +237,7 @@ cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/be
 | `SWEEP_NO_CONFIRM` | `--no-confirm` | `false` | Skip pre-sweep confirmation |
 | `SWEEP_DEBUG` | `--debug` | `false` | Enable verbose `[DEBUG]` log output |
 | `SWEEP_GOAL_HITS` | `--goal-hits` | `3` | Distinct (ngl,ctk,nkvo,ctx) configs before goal early-exit |
+| `SWEEP_GOAL_SORT` | `--goal-sort` | `tg` | Goal Results sort axis: `tg`, `ctx`, `ngl`, `pp` |
 | `SWEEP_MODEL_LIST` | `--model-list` | *(unset)* | Path to model list file |
 | `SWEEP_MIN_NGL` | `--min-ngl` | *(unset)* | Exclude NGL values below N from Phase 7 |
 | `SWEEP_MIN_THREADS` | `--min-threads` | *(unset)* | Exclude thread counts below N from Phase 7 |

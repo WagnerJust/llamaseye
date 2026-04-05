@@ -168,6 +168,7 @@ If these are absent, llamaseye disables the corresponding thermal guard and logs
 | `--no-confirm` | Skip the pre-run confirmation prompt |
 | `--debug` | Enable verbose `[DEBUG]` lines in the log: full command lines, raw stdout/stderr, OOM matches, thermal polls, GGUF metadata |
 | `--goal-hits N` | Stop goal mode after N distinct (ngl, ctk, nkvo, ctx) configs are found (default: 3) |
+| `--goal-sort tg\|ctx\|ngl\|pp` | Sort Goal Results table by this axis, descending (default: `tg`) |
 | `--cpu-temp-limit <°C>` | Pause if CPU exceeds this temperature (default: 88) |
 | `--gpu-temp-limit <°C>` | Pause if GPU exceeds this temperature (default: 81) |
 | `--no-thermal-guard` | Disable thermal polling entirely |
@@ -234,6 +235,7 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 | `SWEEP_DRY_RUN` | `--dry-run` | `SWEEP_DRY_RUN=true` |
 | `SWEEP_DEBUG` | `--debug` | `SWEEP_DEBUG=true` |
 | `SWEEP_GOAL_HITS` | `--goal-hits` | `SWEEP_GOAL_HITS=5` |
+| `SWEEP_GOAL_SORT` | `--goal-sort` | `SWEEP_GOAL_SORT=ctx` |
 
 ---
 

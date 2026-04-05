@@ -76,6 +76,7 @@ type Config struct {
 	// Goal-directed Phase 7
 	Goal            string
 	GoalTargetCount int
+	GoalSort        string // sort key for Goal Results table: "tg" | "ctx" | "ngl" | "pp"
 
 	// Fine-grained context sweep
 	FineCtx      bool
@@ -165,6 +166,7 @@ func Defaults() *Config {
 		MinCTK:          envStr("SWEEP_MIN_CTK", ""),
 		Goal:            envStr("SWEEP_GOAL", ""),
 		GoalTargetCount: envInt("SWEEP_GOAL_HITS", 3),
+		GoalSort:        envStr("SWEEP_GOAL_SORT", "tg"),
 		FineCtx:         envBool("SWEEP_FINE_CTX", false),
 		CtxStepMin:      envInt("SWEEP_CTX_STEP_MIN", 8192),
 		OptimizedSweep:  envBool("SWEEP_OPTIMIZED_SWEEP", false),
@@ -255,6 +257,12 @@ func (c *Config) Validate() error {
 		if d != "up" && d != "down" {
 			return fmt.Errorf("direction flags must be 'up' or 'down', got %q", d)
 		}
+	}
+	switch c.GoalSort {
+	case "tg", "ctx", "ngl", "pp":
+		// valid
+	default:
+		return fmt.Errorf("--goal-sort must be one of: tg, ctx, ngl, pp (got %q)", c.GoalSort)
 	}
 	return nil
 }

@@ -14,6 +14,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 - `--goal-hits N` flag and `SWEEP_GOAL_HITS` env var to control how many distinct goal configs trigger early exit (default: 3, was previously hardcoded).
+- `--goal-sort` flag and `SWEEP_GOAL_SORT` env var to control Goal Results table sort order: `tg` (default), `ctx`, `ngl`, `pp` — all descending, TG used as tiebreaker.
 
 ---
 

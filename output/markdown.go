@@ -96,7 +96,8 @@ func loadJSONL(path string) ([]*record, error) {
 
 // GenerateMarkdown writes sweep.md from sweep.jsonl in outputDir.
 // goalSpec is the raw --goal string (may be empty).
-func GenerateMarkdown(outputDir, modelStem, goalSpec string, timeoutSec int) error {
+// goalSort controls the sort key for the Goal Results table: "tg"|"ctx"|"ngl"|"pp".
+func GenerateMarkdown(outputDir, modelStem, goalSpec, goalSort string, timeoutSec int) error {
 	jsonlPath := filepath.Join(outputDir, "sweep.jsonl")
 	if _, err := os.Stat(jsonlPath); os.IsNotExist(err) {
 		return nil
@@ -174,9 +175,7 @@ func GenerateMarkdown(outputDir, modelStem, goalSpec string, timeoutSec int) err
 			for _, rec := range best {
 				winners = append(winners, rec)
 			}
-			sort.Slice(winners, func(i, j int) bool {
-				return winners[i].tgTS() > winners[j].tgTS()
-			})
+			sort.Slice(winners, goalResultLess(winners, goalSort))
 			for _, rec := range winners {
 				fmt.Fprintf(w, "| %d | %s | %d | %d | %s | %s | %d | %s | %d | %d |\n",
 					rec.Params.NGL, rec.Params.CTK, rec.Params.NKVO, rec.Params.NPrompt,
@@ -445,6 +444,38 @@ func goalSpecDesc(ctx int, tg, pp float64) string {
 		parts = append(parts, fmt.Sprintf("pp≥%.1f t/s", pp))
 	}
 	return strings.Join(parts, " ")
+}
+
+// goalResultLess returns a sort.Slice less function for the Goal Results table.
+// sortKey: "tg" (default) | "ctx" | "ngl" | "pp" — all descending.
+func goalResultLess(records []*record, sortKey string) func(i, j int) bool {
+	switch sortKey {
+	case "ctx":
+		return func(i, j int) bool {
+			if records[i].Params.NPrompt != records[j].Params.NPrompt {
+				return records[i].Params.NPrompt > records[j].Params.NPrompt
+			}
+			return records[i].tgTS() > records[j].tgTS()
+		}
+	case "ngl":
+		return func(i, j int) bool {
+			if records[i].Params.NGL != records[j].Params.NGL {
+				return records[i].Params.NGL > records[j].Params.NGL
+			}
+			return records[i].tgTS() > records[j].tgTS()
+		}
+	case "pp":
+		return func(i, j int) bool {
+			if records[i].ppTS() != records[j].ppTS() {
+				return records[i].ppTS() > records[j].ppTS()
+			}
+			return records[i].tgTS() > records[j].tgTS()
+		}
+	default: // "tg"
+		return func(i, j int) bool {
+			return records[i].tgTS() > records[j].tgTS()
+		}
+	}
 }
 
 func meetsGoal(rec *record, goalCtx int, goalTG, goalPP float64) bool {
