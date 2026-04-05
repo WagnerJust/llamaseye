@@ -6,6 +6,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.1] — 2026-04-05
+
+### Removed
+- `llamaseye.sh` — the legacy Bash script has been deleted now that the Go binary is the sole entry point
+
+### Changed
+- `CLAUDE.md` updated to reflect Go package layout, build instructions, and key types
+
+---
+
 ## [1.0.0] — 2026-04-05
 
 Initial stable release of the Go rewrite.
