@@ -86,6 +86,10 @@ func Parse(args []string) (*config.Config, []string, error) {
 	fs.BoolVar(&cfg.OptimizedSweep, "optimized-sweep", cfg.OptimizedSweep,
 		"Parse GGUF metadata to derive start flags automatically")
 
+	// --env-file is pre-consumed in main.go before Parse is called.
+	// Register it here so it appears in --help output.
+	fs.String("env-file", "", `Load environment variables from FILE before flag parsing (default: auto-load ".env" if present)`)
+
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "llamaseye v0.1.0 — exhaustive llama-bench parameter sweep harness\n\n")
 		fmt.Fprintf(os.Stderr, "Usage: llamaseye [options]\n\n")

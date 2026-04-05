@@ -1064,10 +1064,13 @@ llamaseye is a self-contained Go binary (previously a Bash script: `llamaseye.sh
 
 ### Configuration variables
 
-All overridable via environment variable or CLI flag. The script reads
-environment variables first, then CLI flags override them, so both styles work.
+All overridable via `.env` file, environment variable, or CLI flag. Load order (lowest → highest priority):
 
-> **Note:** Every CLI flag has a corresponding environment variable. CLI flags always take precedence over environment variables when both are set.
+1. `.env` file (auto-loaded from the working directory; override with `--env-file <path>`)
+2. Process environment variables
+3. CLI flags
+
+> **Note:** Every CLI flag has a corresponding `SWEEP_*` environment variable. CLI flags always take precedence. Process env vars always win over `.env` file values.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
