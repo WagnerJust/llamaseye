@@ -62,6 +62,7 @@ func run(args []string) error {
 		return err
 	}
 	defer logger.Close()
+	logger.Debug = cfg.Debug
 
 	// --report mode: no benchmarks, just regenerate markdown
 	if cfg.Report {

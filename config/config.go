@@ -83,6 +83,9 @@ type Config struct {
 
 	// Optimized sweep
 	OptimizedSweep bool
+
+	// Debug mode
+	Debug bool
 }
 
 // envStr reads an env var with a fallback default.
@@ -165,6 +168,7 @@ func Defaults() *Config {
 		FineCtx:         envBool("SWEEP_FINE_CTX", false),
 		CtxStepMin:      envInt("SWEEP_CTX_STEP_MIN", 8192),
 		OptimizedSweep:  envBool("SWEEP_OPTIMIZED_SWEEP", false),
+		Debug:           envBool("SWEEP_DEBUG", false),
 	}
 }
 

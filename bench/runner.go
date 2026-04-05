@@ -47,6 +47,7 @@ type BenchRunner struct {
 	OutputDir string // per-model output directory (must have "raw/" subdir)
 	ModelPath string
 	ModelStem string
+	Logger    interface{ Debugf(string, ...any) } // optional; nil = no debug output
 }
 
 // llamaBenchLine is a single JSON record emitted by llama-bench -o jsonl.
@@ -93,7 +94,10 @@ func (r *BenchRunner) RunBench(label string, p RunParams) (*RunResult, error) {
 	)
 
 	_ = binaryLabel // used in JSONL record construction (output package)
-	_ = threadsDisplay
+
+	if r.Logger != nil {
+		r.Logger.Debugf("cmd: %s %s (threads=%s)", binary, strings.Join(args, " "), threadsDisplay)
+	}
 
 	if r.Config.DryRun {
 		return &RunResult{RunID: runID, Status: StatusDryRun}, nil
@@ -119,6 +123,15 @@ func (r *BenchRunner) RunBench(label string, p RunParams) (*RunResult, error) {
 	_ = os.WriteFile(rawFile, stdoutBuf.Bytes(), 0644)
 	_ = os.WriteFile(stderrFile, stderrBuf.Bytes(), 0644)
 
+	if r.Logger != nil {
+		if stdoutBuf.Len() > 0 {
+			r.Logger.Debugf("stdout (%d bytes): %s", stdoutBuf.Len(), string(truncate(stdoutBuf.Bytes(), 500)))
+		}
+		if stderrBuf.Len() > 0 {
+			r.Logger.Debugf("stderr (%d bytes): %s", stderrBuf.Len(), string(truncate(stderrBuf.Bytes(), 500)))
+		}
+	}
+
 	// Check for timeout (context deadline exceeded => exitCode 124 in bash equiv)
 	if execErr != nil && ctx.Err() == context.DeadlineExceeded {
 		errSnip := truncate(stderrBuf.Bytes(), 400)
@@ -134,6 +147,9 @@ func (r *BenchRunner) RunBench(label string, p RunParams) (*RunResult, error) {
 	combined := append(stdoutBuf.Bytes(), stderrBuf.Bytes()...)
 	if DetectOOMBytes(combined) {
 		errSnip := extractOOMSnippet(combined)
+		if r.Logger != nil {
+			r.Logger.Debugf("OOM detected — matched: %s", errSnip)
+		}
 		return &RunResult{
 			RunID:        runID,
 			Status:       StatusOOM,

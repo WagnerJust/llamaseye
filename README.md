@@ -166,6 +166,7 @@ If these are absent, llamaseye disables the corresponding thermal guard and logs
 | `--report` | Read-only: regenerate `sweep.md` from existing `sweep.jsonl` files without running any benchmarks. Also generates `summary.md` when multiple models are found. Combine with `--model`/`--models-dir` to target a subset; omit both to scan all subdirs of `--output-dir`. |
 | `--dry-run` | Print what would run without executing |
 | `--no-confirm` | Skip the pre-run confirmation prompt |
+| `--debug` | Enable verbose `[DEBUG]` lines in the log: full command lines, raw stdout/stderr, OOM matches, thermal polls, GGUF metadata |
 | `--cpu-temp-limit <°C>` | Pause if CPU exceeds this temperature (default: 88) |
 | `--gpu-temp-limit <°C>` | Pause if GPU exceeds this temperature (default: 81) |
 | `--no-thermal-guard` | Disable thermal polling entirely |
@@ -230,6 +231,7 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 | `SWEEP_MODEL_LIST` | `--model-list` | `SWEEP_MODEL_LIST=~/list.txt` |
 | `SWEEP_NO_CONFIRM` | `--no-confirm` | `SWEEP_NO_CONFIRM=true` |
 | `SWEEP_DRY_RUN` | `--dry-run` | `SWEEP_DRY_RUN=true` |
+| `SWEEP_DEBUG` | `--debug` | `SWEEP_DEBUG=true` |
 
 ---
 

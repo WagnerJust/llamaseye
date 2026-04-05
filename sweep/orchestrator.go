@@ -44,6 +44,7 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 		return fmt.Errorf("open sweep.log: %w", err)
 	}
 	defer logger.Close()
+	logger.Debug = s.Config.Debug
 	s.Logger = logger
 
 	// Write hardware.json
@@ -64,6 +65,7 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 		OutputDir: outputDir,
 		ModelPath: modelPath,
 		ModelStem: modelStem,
+		Logger:    logger,
 	}
 
 	// Build thermal monitor
@@ -74,6 +76,7 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 		PollSeconds: s.Config.CoolPollSec,
 		Disabled:    s.Config.NoThermal,
 		Log:         s.Logger.Log,
+		DebugLog:    s.Logger.Debugf,
 	}
 
 	// Build PhaseEnv
@@ -85,6 +88,17 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 	if meta, err := gguf.Parse(modelPath); err == nil && meta.NumLayers > 0 {
 		env.NumLayers = meta.NumLayers
 		s.Logger.Log("[GGUF] %d layers, %s architecture", meta.NumLayers, meta.Architecture)
+		s.Logger.Debugf("[GGUF] file=%.2f GiB heads=%d kv_heads=%d key_len=%d val_len=%d hybrid=%v",
+			meta.FileGiB, meta.HeadCount, meta.KVHeadsMax, meta.KeyLen, meta.ValLen, meta.HasHybrid)
+		if meta.HasHybrid {
+			s.Logger.Debugf("[GGUF] hybrid: swa_layers=%d global_layers=%d swa_kv_heads=%d global_kv_heads=%d sliding_win=%d",
+				meta.NSWALayers, meta.NGlobalLayers, meta.SWAKVHeads, meta.GlobalKVHeads, meta.SlidingWin)
+		}
+		if s.Config.OptimizedSweep {
+			pred := gguf.Predict(meta, s.HW.GPUVRAMGiB, s.HW.RAMGiB)
+			s.Logger.Debugf("[GGUF] predict: max_ngl=%d start_ngl=%d best_ctx_vram=%d best_ctx_ram=%d start_ctx=%d",
+				pred.MaxNGLPred, pred.StartNGL, pred.BestCtxVRAM, pred.BestCtxRAM, pred.StartCtx)
+		}
 	} else if err != nil {
 		s.Logger.Log("[GGUF] Could not parse metadata (%v) — NGL ceiling defaults to 99", err)
 	}

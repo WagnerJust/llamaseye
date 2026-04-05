@@ -1100,6 +1100,7 @@ These variables were previously CLI-only but are now also read from the environm
 | `SWEEP_DRY_RUN` | `false` | Print commands without executing (`--dry-run`) |
 | `SWEEP_NO_CONFIRM` | `false` | Skip pre-sweep confirmation prompt (`--no-confirm`) |
 | `SWEEP_NO_THERMAL` | `false` | Disable thermal polling entirely (`--no-thermal-guard`) |
+| `SWEEP_DEBUG` | `false` | Enable verbose `[DEBUG]` log output (`--debug`) |
 | `SWEEP_ONLY_PHASES` | *(unset)* | Run only these phases, comma-separated (`--only-phases`) |
 | `SWEEP_SKIP_PHASES` | *(unset)* | Skip these phases, comma-separated (`--skip-phases`) |
 | `SWEEP_MODEL_LIST` | *(unset)* | Path to model list file (`--model-list`) |
@@ -1301,6 +1302,10 @@ Utility:
   --dry-run                  Detect hardware and print all planned commands
                              without executing any benchmarks.
   --no-confirm               Skip Phase 7 size confirmation prompt.
+  --debug                    Enable verbose [DEBUG] log output. Logs full llama-bench
+                             command lines, raw stdout/stderr per run, OOM match strings,
+                             thermal poll results, and GGUF metadata fields.
+                             Env: SWEEP_DEBUG=true
   Axis start points & directions:
   --start-ngl N         Begin ngl sweep at N (skips values before N in sweep direction).
   --ngl-dir up|down     ngl sweep direction: up=0→max, down=max→0. Default: up.
