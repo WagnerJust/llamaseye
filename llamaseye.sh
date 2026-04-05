@@ -27,8 +27,8 @@ set -euo pipefail
 # CONFIGURATION VARIABLES — override via environment or CLI flags
 # =============================================================================
 
-# Path to the llama-bench binary
-LLAMA_BENCH_BIN="${LLAMA_BENCH_BIN:-${HOME}/llama.cpp/build/bin/llama-bench}"
+# Path to the llama-bench binary (required — must be set via LLAMA_BENCH_BIN env var or --llama-bench flag)
+LLAMA_BENCH_BIN="${LLAMA_BENCH_BIN:-}"
 
 # Optional turbo-bench binary (supports turbo3 KV type)
 SWEEP_TURBO_BENCH_BIN="${SWEEP_TURBO_BENCH_BIN:-}"
@@ -37,7 +37,7 @@ SWEEP_TURBO_BENCH_BIN="${SWEEP_TURBO_BENCH_BIN:-}"
 SWEEP_MODELS_DIR="${SWEEP_MODELS_DIR:-}"
 
 # Root directory where all sweep output is written
-SWEEP_OUTPUT_DIR="${SWEEP_OUTPUT_DIR:-${HOME}/Models/bench/sweep}"
+SWEEP_OUTPUT_DIR="${SWEEP_OUTPUT_DIR:-./results}"
 
 # NGL granularity for phase1 sweep (layers per step)
 SWEEP_NGL_STEP="${SWEEP_NGL_STEP:-4}"
@@ -3121,6 +3121,7 @@ main() {
     print_hardware_summary
 
     # Validate binary exists
+    [[ -n "${LLAMA_BENCH_BIN}" ]] || die "llama-bench binary not specified. Set LLAMA_BENCH_BIN in .env or pass --llama-bench <path>"
     [[ -x "${LLAMA_BENCH_BIN}" ]] || die "llama-bench not found or not executable: ${LLAMA_BENCH_BIN}"
 
     # Pre-sweep confirmation (skipped with --no-confirm or --dry-run)
