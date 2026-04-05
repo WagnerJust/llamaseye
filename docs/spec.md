@@ -883,9 +883,10 @@ for short runs that don't push thermals.
 
 ```
 <output-dir>/
+├── summary.md               ← cross-model winner table (written when >1 model is swept)
 └── <model-stem>/
     ├── sweep.jsonl          ← one record per run (appended; never truncated)
-    ├── sweep.md             ← full results table, written after each phase
+    ├── sweep.md             ← full results table, regenerable from sweep.jsonl
     ├── sweep.log            ← timestamped human-readable run log
     ├── state.json           ← sweep state (max_ngl, phase progress, working sets)
     └── raw/
@@ -893,6 +894,8 @@ for short runs that don't push thermals.
 ```
 
 `<model-stem>` = model filename without path, without `.gguf`, spaces → `_`.
+
+**`--report` mode:** pass `--report --output-dir <dir>` to regenerate `sweep.md` (and `summary.md`) from existing `sweep.jsonl` files without re-running any benchmarks. Scans all model subdirs by default; combine with `--model` or `--models-dir` to target a subset.
 
 ### state.json
 
@@ -983,23 +986,30 @@ One record per llama-bench invocation. Append only.
 
 ### Markdown summary table
 
-`sweep.md` is regenerated after each phase from `sweep.jsonl`. It contains
-one table per phase with columns:
+`sweep.md` is regenerated after each phase (and on demand via `--report`) from
+`sweep.jsonl`. It contains these sections in order:
 
-```
-| Phase | Label | ngl | fa | ctk | threads | nkvo | b | ub | n_prompt | PP t/s | TG t/s | Viable | Status |
-```
+**Best Configurations** — top 10 results across all phases ranked by TG t/s.
+Columns: rank, phase, ngl, fa, ctk, threads, nkvo, b, ub, n_prompt, PP t/s, TG t/s.
 
+**Goal Results** — when `--goal` was active and Phase 7 ran, lists Phase 7 rows
+satisfying the goal, ranked by TG t/s.
+
+**Per-phase tables** — one table per phase with columns:
+```
+| ngl | fa | ctk | threads | nkvo | b | ub | n_prompt | PP t/s | TG t/s | viable | status |
+```
 Sorted within each phase by TG t/s descending, OOM/timeout rows at the bottom.
+Each table is followed by a `> **Winner:**` callout line showing the best ok config
+for that axis.
 
-After Phase 6, if any context sizes timed out, a dedicated section is added:
-**Context sizes that timed out (achievable but slow)** — a table with ctx,
-`wall_time_sec`, ngl, ctk, nkvo. These are distinct from OOM: the model *can*
-process that context, it just takes longer than `SWEEP_TIMEOUT_SEC`.
+After Phase 6, if any context sizes timed out, a dedicated section:
+**Context sizes that timed out (achievable but slow)** — ctx, `wall_time_sec`,
+ngl, ctk, nkvo. These are distinct from OOM: the model *can* process that context,
+it just takes longer than `SWEEP_TIMEOUT_SEC`.
 
-Phase 7 gets its own section: **Combination Matrix Results**, with an additional
-summary subsection: **Context Frontier** — a table of max successful context
-size per (ngl, ctk, nkvo) triple.
+Phase 7 gets an additional subsection: **Context Frontier** — max successful
+context size per (ngl, ctk, nkvo) triple.
 
 ```
 ### Context Frontier

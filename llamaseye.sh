@@ -129,6 +129,7 @@ OPT_OVERWRITE="${SWEEP_OVERWRITE:-false}"        # --overwrite / SWEEP_OVERWRITE
 OPT_DRY_RUN="${SWEEP_DRY_RUN:-false}"           # --dry-run / SWEEP_DRY_RUN
 OPT_NO_CONFIRM="${SWEEP_NO_CONFIRM:-false}"      # --no-confirm / SWEEP_NO_CONFIRM
 OPT_NO_THERMAL="${SWEEP_NO_THERMAL:-false}"      # --no-thermal-guard / SWEEP_NO_THERMAL
+OPT_REPORT="${SWEEP_REPORT:-false}"              # --report / SWEEP_REPORT
 OPT_ONLY_PHASES="${SWEEP_ONLY_PHASES:-}"         # --only-phases / SWEEP_ONLY_PHASES
 OPT_SKIP_PHASES="${SWEEP_SKIP_PHASES:-}"         # --skip-phases / SWEEP_SKIP_PHASES
 OPT_MODEL_LIST_FILE="${SWEEP_MODEL_LIST:-}"      # --model-list / SWEEP_MODEL_LIST
@@ -318,6 +319,11 @@ Phase 7 minimum thresholds (auto-derived by default, override to disable):
 
   --dry-run             Print bench commands without executing them
   --no-confirm          Skip the pre-sweep confirmation prompt
+  --report              Regenerate sweep.md (and summary.md for multi-model
+                        output dirs) from existing sweep.jsonl files without
+                        running any benchmarks. Requires --output-dir. Can be
+                        combined with --model or --models-dir to target a
+                        specific subset; omit both to scan all subdirs.
 
   -h, --help            Show this help and exit
 
@@ -487,6 +493,8 @@ parse_args() {
                 OPT_DRY_RUN=true; shift ;;
             --no-confirm)
                 OPT_NO_CONFIRM=true; shift ;;
+            --report)
+                OPT_REPORT=true; shift ;;
             -h|--help)
                 usage ;;
             -*)
@@ -497,7 +505,7 @@ parse_args() {
     done
 
     # Stash explicit --model so resolve_model_list() can prioritise it
-    [[ -n "${model_explicit}" ]] && MODEL_LIST=("${model_explicit}")
+    [[ -n "${model_explicit}" ]] && MODEL_LIST=("${model_explicit}") || true
 }
 
 # -----------------------------------------------------------------------------
@@ -2695,9 +2703,44 @@ write_markdown() {
         echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo
 
+        # Top-N summary table — best configs across all phases by TG t/s
+        local _top_n=10
+        local _top_count
+        _top_count="$(jq -s '[.[] | select(.status=="ok")] | length' "${jsonl}" 2>/dev/null || echo 0)"
+        if (( _top_count > 0 )); then
+            echo "## Best Configurations (Top ${_top_n} by TG t/s)"
+            echo
+            echo "Best results across all phases, ranked by token generation speed."
+            echo
+            echo "| # | ph | ngl | fa | ctk | threads | nkvo | b | ub | n_prompt | PP t/s | TG t/s |"
+            echo "|--:|---:|-----|-----|-----|---------|------|---|----|---------:|-------:|-------:|"
+            jq -rs --argjson n "${_top_n}" '
+                [.[] | select(.status=="ok")] |
+                sort_by(-((.results[]? | select(.test=="tg") | .avg_ts) // 0)) |
+                .[:$n] |
+                to_entries | .[] |
+                {rank: (.key+1), r: .value} |
+                [
+                    (.rank | tostring),
+                    (.r.phase | tostring),
+                    (.r.params.ngl | tostring),
+                    (.r.params.fa  | tostring),
+                    .r.params.ctk,
+                    (if .r.params.threads_is_default then "sys" else (.r.params.threads | tostring) end),
+                    (.r.params.nkvo | tostring),
+                    (.r.params.b    | tostring),
+                    (.r.params.ub   | tostring),
+                    (.r.params.n_prompt | tostring),
+                    ((.r.results[]? | select(.test=="pp") | .avg_ts | tostring) // "-"),
+                    ((.r.results[]? | select(.test=="tg") | .avg_ts | tostring) // "-")
+                ] | "| " + join(" | ") + " |"
+            ' "${jsonl}" 2>/dev/null
+            echo
+        fi
+
         # Goal Results section — only when --goal was active and Phase 7 ran
         if [[ -n "${OPT_GOAL}" ]] && \
-           jq -e '[.[] | select(.phase==7 and .status=="ok")] | length > 0' "${jsonl}" &>/dev/null; then
+           jq -se '[.[] | select(.phase==7 and .status=="ok")] | length > 0' "${jsonl}" &>/dev/null; then
             local _gd=""
             [[ -n "${GOAL_CTX}"   ]] && _gd+=" ctx≥${GOAL_CTX}"
             [[ -n "${GOAL_TG_TS}" ]] && _gd+=" tg≥${GOAL_TG_TS} t/s"
@@ -2708,7 +2751,7 @@ write_markdown() {
             echo
             echo "| ngl | fa | ctk | threads | nkvo | b | ub | n_prompt | PP t/s | TG t/s | viable |"
             echo "|-----|-----|-----|---------|------|---|----|---------:|-------:|-------:|--------|"
-            jq -r \
+            jq -rs \
                 --argjson goal_ctx  "$([ -n "${GOAL_CTX}"   ] && echo "${GOAL_CTX}"   || echo "0")" \
                 --argjson goal_tg   "$([ -n "${GOAL_TG_TS}" ] && echo "${GOAL_TG_TS}" || echo "0")" \
                 --argjson goal_pp   "$([ -n "${GOAL_PP_TS}" ] && echo "${GOAL_PP_TS}" || echo "0")" \
@@ -2738,7 +2781,7 @@ write_markdown() {
 
         local phase phase_label
         for phase in 0 1 2 3 4 5 6 7; do
-            phase_label="$(jq -r --argjson ph "${phase}" '[.[] | select(.phase==$ph)] | .[0].phase_label // empty' "${jsonl}" 2>/dev/null | head -1)"
+            phase_label="$(jq -rs --argjson ph "${phase}" '[.[] | select(.phase==$ph)] | .[0].phase_label // empty' "${jsonl}" 2>/dev/null | head -1)"
             [[ -z "${phase_label}" ]] && continue
 
             echo "## Phase ${phase} — ${phase_label}"
@@ -2746,11 +2789,11 @@ write_markdown() {
             echo "| ngl | fa | ctk | threads | nkvo | b | ub | n_prompt | PP t/s | TG t/s | viable | status |"
             echo "|-----|-----|-----|---------|------|---|----|---------:|-------:|-------:|--------|--------|"
 
-            jq -r --argjson ph "${phase}" '
+            jq -rs --argjson ph "${phase}" '
                 [.[] | select(.phase==$ph)] |
                 sort_by(
                     if .status == "ok" then
-                        (-.results[]? | select(.test=="tg") | .avg_ts) // 0
+                        (0 - ((.results[]? | select(.test=="tg") | .avg_ts) // 0))
                     else 1000000 end
                 ) |
                 .[] |
@@ -2769,11 +2812,21 @@ write_markdown() {
                     .status
                 ] | "| " + join(" | ") + " |"
             ' "${jsonl}" 2>/dev/null
+
+            # Per-phase winner callout — best ok row in this phase
+            jq -rs --argjson ph "${phase}" '
+                [.[] | select(.phase==$ph and .status=="ok")] |
+                sort_by(-((.results[]? | select(.test=="tg") | .avg_ts) // 0)) |
+                .[0] |
+                if . then
+                    "> **Winner:** ngl=\(.params.ngl) fa=\(.params.fa) ctk=\(.params.ctk) threads=\(if .params.threads_is_default then "sys" else (.params.threads|tostring) end) nkvo=\(.params.nkvo) b=\(.params.b) ub=\(.params.ub) n_prompt=\(.params.n_prompt) → TG \(((.results[]? | select(.test=="tg") | .avg_ts) // "-" | tostring) ) t/s  PP \(((.results[]? | select(.test=="pp") | .avg_ts) // "-" | tostring)) t/s"
+                else empty end
+            ' "${jsonl}" 2>/dev/null
             echo
         done
 
         # Phase 6 timeout ctx sizes — achievable but slow
-        if jq -e '[.[] | select(.phase==6 and .status=="timeout")] | length > 0' "${jsonl}" &>/dev/null; then
+        if jq -se '[.[] | select(.phase==6 and .status=="timeout")] | length > 0' "${jsonl}" &>/dev/null; then
             echo "## Phase 6 — Context sizes that timed out (achievable but slow)"
             echo
             echo "These context sizes were not OOM — they timed out after \`${SWEEP_TIMEOUT_SEC}s\`."
@@ -2781,7 +2834,7 @@ write_markdown() {
             echo
             echo "| ctx | wall time (s) | ngl | ctk | nkvo |"
             echo "|----:|--------------:|-----|-----|------|"
-            jq -r '
+            jq -rs '
                 [.[] | select(.phase==6 and .status=="timeout")] |
                 sort_by(.params.n_prompt) |
                 .[] |
@@ -2797,12 +2850,12 @@ write_markdown() {
         fi
 
         # Context frontier (from Phase 7)
-        if jq -e '[.[] | select(.phase==7 and .status=="ok")] | length > 0' "${jsonl}" &>/dev/null; then
+        if jq -se '[.[] | select(.phase==7 and .status=="ok")] | length > 0' "${jsonl}" &>/dev/null; then
             echo "## Context Frontier"
             echo
             echo "| ngl | ctk | nkvo | Max Context | PP t/s |"
             echo "|-----|-----|------|------------:|-------:|"
-            jq -r '
+            jq -rs '
                 [.[] | select(.phase==7 and .status=="ok" and .params.n_gen==0)] |
                 group_by([.params.ngl, .params.ctk, .params.nkvo]) |
                 .[] |
@@ -2821,6 +2874,107 @@ write_markdown() {
     } > "${md_file}"
 
     log "Markdown written: ${md_file}"
+}
+
+# -----------------------------------------------------------------------------
+# write_cross_model_summary OUTPUT_DIR MODEL_STEMS...
+#   Generate OUTPUT_DIR/summary.md comparing winners across multiple models.
+#   Each positional arg after the first is a model stem (subdir name).
+# -----------------------------------------------------------------------------
+write_cross_model_summary() {
+    local out_dir="${1}"; shift
+    local stems=("$@")
+    [[ ${#stems[@]} -lt 2 ]] && return 0
+
+    local summary_file="${out_dir}/summary.md"
+    {
+        echo "# Multi-Model Sweep Summary"
+        echo
+        echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo
+        echo "${#stems[@]} models benchmarked. Sorted by best TG t/s."
+        echo
+        echo "| Model | Best TG t/s | PP t/s | ngl | fa | ctk | nkvo | b | ub | threads | n_prompt |"
+        echo "|-------|------------:|-------:|-----|-----|-----|------|---|----|---------:|---------:|"
+
+        local stem best_tg_row
+        local -a rows=()
+        for stem in "${stems[@]}"; do
+            local jsonl="${out_dir}/${stem}/sweep.jsonl"
+            [[ -f "${jsonl}" ]] || continue
+            best_tg_row="$(jq -rs '
+                [.[] | select(.status=="ok")] |
+                sort_by(-((.results[]? | select(.test=="tg") | .avg_ts) // 0)) |
+                .[0] |
+                if . then
+                    [
+                        ((.results[]? | select(.test=="tg") | .avg_ts) // 0 | tostring),
+                        ((.results[]? | select(.test=="pp") | .avg_ts) // "-" | tostring),
+                        (.params.ngl | tostring),
+                        (.params.fa  | tostring),
+                        .params.ctk,
+                        (.params.nkvo | tostring),
+                        (.params.b    | tostring),
+                        (.params.ub   | tostring),
+                        (if .params.threads_is_default then "sys" else (.params.threads | tostring) end),
+                        (.params.n_prompt | tostring)
+                    ] | join("|")
+                else empty end
+            ' "${jsonl}" 2>/dev/null)" || continue
+            [[ -z "${best_tg_row}" ]] && continue
+            rows+=("${best_tg_row}|${stem}")
+        done
+
+        # Sort rows by TG t/s (field 1) descending
+        printf '%s\n' "${rows[@]}" | sort -t'|' -k1 -rn | while IFS='|' read -r tg pp ngl fa ctk nkvo b ub threads n_prompt stem_name; do
+            printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+                "${stem_name}" "${tg}" "${pp}" "${ngl}" "${fa}" "${ctk}" "${nkvo}" "${b}" "${ub}" "${threads}" "${n_prompt}"
+        done
+        echo
+    } > "${summary_file}"
+
+    echo "Cross-model summary written: ${summary_file}"
+}
+
+# -----------------------------------------------------------------------------
+# report_mode
+#   Read-only: regenerate sweep.md for each model dir found under SWEEP_OUTPUT_DIR
+#   that contains a sweep.jsonl. Then generate summary.md if multiple models.
+# -----------------------------------------------------------------------------
+report_mode() {
+    [[ -d "${SWEEP_OUTPUT_DIR}" ]] || die "--report: output dir not found: ${SWEEP_OUTPUT_DIR}"
+
+    local -a stems=()
+
+    # If MODEL_LIST was explicitly set via --model or --models-dir, use those stems
+    if [[ ${#MODEL_LIST[@]} -gt 0 ]]; then
+        local m
+        for m in "${MODEL_LIST[@]}"; do
+            local stem
+            stem="$(basename "${m}" .gguf)"
+            [[ -f "${SWEEP_OUTPUT_DIR}/${stem}/sweep.jsonl" ]] || { echo "No sweep.jsonl for ${stem} — skipping"; continue; }
+            stems+=("${stem}")
+        done
+    else
+        # Scan all subdirs for sweep.jsonl
+        local subdir
+        while IFS= read -r subdir; do
+            [[ -f "${subdir}/sweep.jsonl" ]] || continue
+            stems+=("$(basename "${subdir}")")
+        done < <(find "${SWEEP_OUTPUT_DIR}" -mindepth 1 -maxdepth 1 -type d | sort)
+    fi
+
+    [[ ${#stems[@]} -eq 0 ]] && die "--report: no sweep.jsonl files found under ${SWEEP_OUTPUT_DIR}"
+
+    local stem
+    for stem in "${stems[@]}"; do
+        MODEL_STEM="${stem}"
+        OUTPUT_MODEL_DIR="${SWEEP_OUTPUT_DIR}/${stem}"
+        write_markdown
+        echo "Regenerated: ${OUTPUT_MODEL_DIR}/sweep.md"
+    done
+
+    write_cross_model_summary "${SWEEP_OUTPUT_DIR}" "${stems[@]}"
 }
 
 # -----------------------------------------------------------------------------
@@ -2947,6 +3101,17 @@ main() {
     parse_goal
     check_optimized_conflicts
 
+    # --report mode: regenerate markdown from existing sweep.jsonl, no benchmarks
+    if $OPT_REPORT; then
+        # resolve_model_list is optional for --report; if no model flags given,
+        # report_mode() will scan the output dir itself.
+        if [[ -n "${SWEEP_MODELS_DIR:-}" ]] || [[ ${#MODEL_LIST[@]} -gt 0 ]]; then
+            resolve_model_list 2>/dev/null || true
+        fi
+        report_mode
+        exit 0
+    fi
+
     # Resolve the model list before printing anything substantial
     resolve_model_list
 
@@ -2967,9 +3132,14 @@ main() {
     fi
 
     local model
+    local -a swept_stems=()
     for model in "${MODEL_LIST[@]}"; do
         sweep_model "${model}"
+        swept_stems+=("$(basename "${model}" .gguf)")
     done
+
+    # Generate cross-model summary when multiple models were swept
+    write_cross_model_summary "${SWEEP_OUTPUT_DIR}" "${swept_stems[@]}"
 
     log "All sweeps complete."
 }

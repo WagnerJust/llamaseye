@@ -135,6 +135,7 @@ llamaseye verifies the binary at startup by probing it with `-ctk turbo3`. If th
 | `--overwrite` | Delete existing output dir and re-run everything |
 | `--only-phases <list>` | Comma-separated list of phase numbers to run (e.g. `0,1,7`) |
 | `--skip-phases <list>` | Comma-separated list of phase numbers to skip |
+| `--report` | Read-only: regenerate `sweep.md` from existing `sweep.jsonl` files without running any benchmarks. Also generates `summary.md` when multiple models are found. Combine with `--model`/`--models-dir` to target a subset; omit both to scan all subdirs of `--output-dir`. |
 | `--dry-run` | Print what would run without executing |
 | `--no-confirm` | Skip the pre-run confirmation prompt |
 | `--cpu-temp-limit <°C>` | Pause if CPU exceeds this temperature (default: 88) |
@@ -289,9 +290,10 @@ Results are written to `<output-dir>/<model-stem>/`:
 
 ```
 results/
+├── summary.md                        # Cross-model winner table (multi-model runs only)
 └── Qwen3-14B-Q4_K_M/
-    ├── sweep.jsonl       # One JSON object per completed run
-    ├── sweep.md          # Human-readable Markdown summary table
+    ├── sweep.jsonl       # One JSON object per completed run (source of truth)
+    ├── sweep.md          # Human-readable Markdown summary (regenerable with --report)
     ├── sweep.log         # Full execution log
     ├── hardware.json     # Hardware snapshot captured at start
     ├── state.json        # Resume state (completed phases + best values + working sets)
@@ -300,6 +302,18 @@ results/
 ```
 
 `sweep.jsonl` is append-only and is the source of truth. `state.json` tracks which phases are complete and the best parameter values discovered so far, enabling `--resume` to pick up exactly where it left off.
+
+**`sweep.md` sections:**
+- **Best Configurations** — top 10 results across all phases ranked by TG t/s
+- **Per-phase tables** — all runs for each phase, sorted by TG t/s, with a `> **Winner:**` callout line showing the best config for that axis
+- **Goal Results** — when `--goal` was used, Phase 7 rows that met the target
+- **Context Frontier** — max stable context per (ngl, ctk, nkvo) combo from Phase 7
+- **Slow context** — Phase 6 sizes that timed out (achievable but impractical for interactive use)
+
+`sweep.md` can be regenerated at any time from `sweep.jsonl` without re-running benchmarks:
+```bash
+bash llamaseye.sh --report --output-dir ./results
+```
 
 ---
 
