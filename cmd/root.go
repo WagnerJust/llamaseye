@@ -86,6 +86,7 @@ func Parse(args []string, version string) (*config.Config, []string, error) {
 	fs.IntVar(&cfg.CtxStepMin, "ctx-step-min", cfg.CtxStepMin, "Min bisection step for --fine-ctx")
 	fs.BoolVar(&cfg.OptimizedSweep, "optimized-sweep", cfg.OptimizedSweep,
 		"Parse GGUF metadata to derive start flags automatically")
+	fs.BoolVar(&cfg.Debug, "debug", cfg.Debug, "Enable verbose [DEBUG] log output")
 
 	// --env-file is pre-consumed in main.go before Parse is called.
 	// Register it here so it appears in --help output.

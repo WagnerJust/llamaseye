@@ -13,6 +13,7 @@ import (
 type Logger struct {
 	mu      sync.Mutex
 	logFile *os.File
+	Debug   bool // when true, Debugf writes [DEBUG] lines; when false, Debugf is a no-op
 }
 
 // NewLogger creates a Logger. If logPath is non-empty, it opens/creates the file for appending.
@@ -47,6 +48,13 @@ func (l *Logger) Log(format string, args ...any) {
 // Warn writes a [WARN]-prefixed message.
 func (l *Logger) Warn(format string, args ...any) {
 	l.Log("[WARN] "+format, args...)
+}
+
+// Debugf writes a [DEBUG]-prefixed message when l.Debug is true; no-op otherwise.
+func (l *Logger) Debugf(format string, args ...any) {
+	if l.Debug {
+		l.Log("[DEBUG] "+format, args...)
+	}
 }
 
 func (l *Logger) write(msg string) {

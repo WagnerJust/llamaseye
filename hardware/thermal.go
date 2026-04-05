@@ -16,6 +16,7 @@ type ThermalMonitor struct {
 	PollSeconds int
 	Disabled    bool
 	Log         func(format string, args ...any)
+	DebugLog    func(format string, args ...any) // optional; called on every poll when temps are within limits
 }
 
 // WaitCool blocks until both CPU and GPU temperatures are below their limits.
@@ -35,6 +36,9 @@ func (tm *ThermalMonitor) WaitCool(ctx context.Context) {
 		gpuTemp := tm.readTemp(tm.HW.GPUTempCmd)
 
 		if cpuTemp < tm.CPULimit && gpuTemp < tm.GPULimit {
+			if tm.DebugLog != nil {
+				tm.DebugLog("[THERMAL] poll: CPU=%d°C GPU=%d°C — within limits", cpuTemp, gpuTemp)
+			}
 			return
 		}
 

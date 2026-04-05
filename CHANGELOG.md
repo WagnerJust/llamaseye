@@ -6,6 +6,19 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.1.0] — 2026-04-05
+
+### Added
+- `--debug` flag and `SWEEP_DEBUG=true` env var: enables verbose `[DEBUG]` lines in the sweep log
+  - Full `llama-bench` command line logged before each run
+  - Raw stdout/stderr (up to 500 bytes) surfaced in `sweep.log` after each run
+  - OOM regex match string logged when OOM is detected
+  - Thermal polling results logged on every poll, not just when pausing
+  - GGUF metadata fields (file size, heads, KV dims, hybrid attention layout) logged at sweep start
+  - `gguf.Predict()` output (predicted NGL, context ceilings) logged when `--optimized-sweep` is active
+
+---
+
 ## [1.0.1] — 2026-04-05
 
 ### Removed
