@@ -85,6 +85,8 @@ tail -f ~/Models/bench/sweep/sweep.log
 | Start NGL sweep mid-range | `--start-ngl 40` |
 | NGL sweep downward from a known point | `--start-ngl 60 --ngl-dir down` |
 | Skip low context sizes | `--start-ctx 65536` |
+| Find intermediate ctx sizes (turbo vs q4_0 gap) | `--fine-ctx` |
+| Set minimum bisection step | `--fine-ctx --ctx-step-min 4096` |
 | Skip low-quality KV types in Phase 7 | `--min-ctk q8_0` |
 | Phase 7 only above 64k context | `--min-ctx 65536` |
 | Only test FA=1 | `--start-fa 1` |
@@ -154,6 +156,7 @@ table in the Phase 7 section showing max successful context per (ngl, ctk, nkvo)
 4. **NGL sweet spot** — Phase 1 table shows where adding more GPU layers stops helping
 5. **KV quant tradeoff** — Phase 2 shows speed vs. memory across f16, q8_0, q4_0, turbo types
 6. **Slow context section** — `sweep.md` has a "Context sizes that timed out (achievable but slow)" section when Phase 6 hits `SWEEP_TIMEOUT_SEC`; terminal shows `Slow context: N` — these sizes work, just need more than the timeout to prefill. The `sweep.jsonl` record has `"status":"timeout"` and a `wall_time_sec` field.
+7. **Intermediate context gap** — Phase 6 sweeps powers of two, so a more-compressed KV type (e.g. turbo3) may unlock a context between 65536 and 131072 that the sweep never probes. Use `--fine-ctx` to enable midpoint bisection that finds these. Off by default because probes at large ctx are slow.
 
 **TG vs PP:**
 - **TG (token generation)** — decode speed; the metric for interactive/chat use

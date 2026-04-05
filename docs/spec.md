@@ -651,6 +651,24 @@ Use `-n 0` (PP-only) and `-r 2` to keep runtime bounded on large contexts.
   context sizes are surfaced separately in `sweep.md` ("Context sizes that timed
   out — achievable but slow") and in the terminal summary as `Slow context: N`.
 
+**Fine-grained bisection (`--fine-ctx`):** By default the context list is
+powers of two, so there can be a large gap between the last successful size and
+the next failing one. A more-compressed KV type may unlock an intermediate ctx
+that the default sweep misses. When `--fine-ctx` is set:
+
+1. After all fallbacks fail at a ctx size, the sweep bisects between `BEST_CTX`
+   (last successful) and the failed ctx.
+2. Each midpoint is rounded to the nearest 512 tokens and probed with the full
+   primary + fallback sequence.
+3. If the midpoint succeeds, `BEST_CTX` advances and the sweep probes higher.
+   If it fails, the upper bound narrows.
+4. Bisection stops when `(failed_ctx − BEST_CTX) ≤ --ctx-step-min` (default 8192).
+5. A timeout at any bisection probe stops bisection immediately.
+
+This is opt-in because each probe at a large context is slow. Records written
+by bisection probes use `phase_label: "ctx_sweep"` identical to standard Phase 6
+records and are indistinguishable in the JSONL output.
+
 **Records written:** One JSONL record per context size and config attempted
 (including OOM records with `status: "oom"` and timeout records with
 `status: "timeout"`). Fallback attempt records include a `fallback: true`
@@ -1256,6 +1274,12 @@ Utility:
   --threads-dir up|down Thread sweep direction. Default: up.
   --start-ctx N         Begin context sweep at prompt size N.
   --ctx-dir up|down     Context sweep direction: up=128→131072, down=131072→128. Default: up.
+  --fine-ctx            Enable midpoint bisection in Phase 6. When all fallbacks
+                        fail at a context size, bisects between the last ok ctx
+                        and the failed ctx to find intermediate sizes unlocked by
+                        more-compressed KV types. Off by default (slow at large ctx).
+  --ctx-step-min N      Minimum bisection step for --fine-ctx. Bisection stops
+                        when (failed_ctx − last_ok_ctx) ≤ N. Default: 8192.
   --start-ctk TYPE      Begin KV quant sweep at TYPE.
                         Full ordering (up=more compression):
                         f16 → q8_0 → q4_0 → turbo4 → turbo3 → turbo2
