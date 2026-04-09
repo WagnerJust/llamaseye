@@ -210,6 +210,36 @@ func TestBinarySelector_TurboAvailable(t *testing.T) {
 	}
 }
 
+func TestBinarySelector_RotorUnavailable(t *testing.T) {
+	sel := &BinarySelector{StandardBin: "/std/llama-bench", RotorAvailable: false}
+	for _, typ := range []string{"planar3", "planar4", "iso3", "iso4"} {
+		_, _, err := sel.Select(typ)
+		if err == nil {
+			t.Errorf("expected error for rotor type %q when RotorAvailable=false", typ)
+		}
+	}
+}
+
+func TestBinarySelector_RotorAvailable(t *testing.T) {
+	sel := &BinarySelector{
+		StandardBin:    "/std/llama-bench",
+		RotorBin:       "/rotor/llama-bench",
+		RotorAvailable: true,
+	}
+	for _, typ := range []string{"planar3", "planar4", "iso3", "iso4"} {
+		path, label, err := sel.Select(typ)
+		if err != nil {
+			t.Fatalf("Select %s: %v", typ, err)
+		}
+		if path != "/rotor/llama-bench" {
+			t.Errorf("path = %q, want /rotor/llama-bench", path)
+		}
+		if label != "rotorquant" {
+			t.Errorf("label = %q, want rotorquant", label)
+		}
+	}
+}
+
 func TestRunBench_TurboUnavailable(t *testing.T) {
 	r := newTestRunner(t, &mockExecutor{})
 	r.Selector.TurboAvailable = false

@@ -14,6 +14,7 @@ type Config struct {
 	// Binary paths
 	LlamaBenchBin  string
 	TurboBenchBin  string
+	RotorBenchBin  string
 
 	// Model selection
 	ModelPath      string   // --model
@@ -138,6 +139,7 @@ func Defaults() *Config {
 	return &Config{
 		LlamaBenchBin:   envStr("LLAMA_BENCH_BIN", home+"/llama.cpp/build/bin/llama-bench"),
 		TurboBenchBin:   envStr("SWEEP_TURBO_BENCH_BIN", ""),
+		RotorBenchBin:   envStr("SWEEP_ROTOR_BENCH_BIN", ""),
 		ModelsDir:       envStr("SWEEP_MODELS_DIR", ""),
 		OutputDir:       envStr("SWEEP_OUTPUT_DIR", home+"/Models/bench/sweep"),
 		NGLStep:         envInt("SWEEP_NGL_STEP", 4),

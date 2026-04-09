@@ -126,6 +126,19 @@ func BestFACTVForCTK(ws []state.FACTKCombo, targetCTK string) (fa int, ctv strin
 	return
 }
 
+// FindFACTKByKV finds the best FA value (fa=1 preferred) for an exact (ctk, ctv) pair.
+func FindFACTKByKV(ws []state.FACTKCombo, ctk, ctv string) (fa int, found bool) {
+	for _, combo := range ws {
+		if combo.CTK == ctk && combo.CTV == ctv {
+			if !found || combo.FA == 1 {
+				fa = combo.FA
+				found = true
+			}
+		}
+	}
+	return
+}
+
 // RecordAndTrack runs a bench and writes the JSONL record.
 // Returns the status and the TG t/s (0 if not available).
 func RecordAndTrack(env *PhaseEnv, label string, p bench.RunParams) (bench.Status, float64, float64) {

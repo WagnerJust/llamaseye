@@ -279,6 +279,81 @@ func TestP6CtxSweep_StopsOnOOM(t *testing.T) {
 	}
 }
 
+func TestP6CtxSweep_VFirstFallback(t *testing.T) {
+	// Primary fails at ctx=512; V-first fallback (same CTK, more-compressed CTV) succeeds.
+	// ctx=1024 primary + its V-first fallback both OOM to stop the sweep at 512.
+	// WS.FACTK has (f16,f16) and (f16,turbo3); no K+V fallbacks because CTK=f16 has no
+	// more-compressed CTK entries in WS.FACTK.
+	responses := []phaseResponse{
+		{stderr: "failed to allocate"}, // ctx=512 primary OOM
+		{stdout: okOutput()},           // V-first: ctk=f16, ctv=turbo3, nkvo=0 ok
+		{stderr: "failed to allocate"}, // ctx=1024 primary OOM
+		{stderr: "failed to allocate"}, // ctx=1024 V-first: ctk=f16, ctv=turbo3, nkvo=0 OOM
+	}
+	exec := &mockPhaseExecutor{responses: responses}
+	env := newTestEnv(t, exec)
+	env.Config.StartCtx = intPtr(512)
+	env.Best.CTK = "f16"
+	env.Best.CTV = "f16"
+	env.WS.NKVO = []int{0}
+	// Phase 2 validated (f16, turbo3) as an asymmetric combo
+	env.WS.FACTK = []state.FACTKCombo{
+		{FA: 1, CTK: "f16", CTV: "f16"},
+		{FA: 1, CTK: "f16", CTV: "turbo3"},
+	}
+	env.Runner.Selector.TurboAvailable = true
+
+	p := P6CtxSweep{}
+	if err := p.Run(context.Background(), env); err != nil {
+		t.Fatalf("P6: %v", err)
+	}
+	if env.Best.CTX != 512 {
+		t.Errorf("Best.CTX = %d, want 512 (V-first fallback should have succeeded)", env.Best.CTX)
+	}
+	if !containsInt(env.WS.CTX, 512) {
+		t.Error("expected 512 in WS.CTX")
+	}
+}
+
+func TestP6CtxSweep_KVFallbackAfterVExhausted(t *testing.T) {
+	// V-first fallback OOMs; K+V fallback then succeeds at ctx=512.
+	// ctx=1024 primary + all its fallbacks (V-first + K+V) OOM to stop sweep.
+	// WS.FACTK has (f16,f16), (f16,turbo3), (q8_0,q8_0):
+	//   V-first at 1024: (f16,turbo3) — 1 attempt
+	//   K+V at 1024: (q8_0,q8_0) — 1 attempt
+	responses := []phaseResponse{
+		{stderr: "failed to allocate"}, // ctx=512 primary OOM
+		{stderr: "failed to allocate"}, // ctx=512 V-first: ctk=f16, ctv=turbo3, nkvo=0 OOM
+		{stdout: okOutput()},           // ctx=512 K+V: ctk=q8_0, ctv=q8_0, nkvo=0 ok
+		{stderr: "failed to allocate"}, // ctx=1024 primary OOM
+		{stderr: "failed to allocate"}, // ctx=1024 V-first: ctk=f16, ctv=turbo3, nkvo=0 OOM
+		{stderr: "failed to allocate"}, // ctx=1024 K+V: ctk=q8_0, ctv=q8_0, nkvo=0 OOM
+	}
+	exec := &mockPhaseExecutor{responses: responses}
+	env := newTestEnv(t, exec)
+	env.Config.StartCtx = intPtr(512)
+	env.Best.CTK = "f16"
+	env.Best.CTV = "f16"
+	env.WS.NKVO = []int{0}
+	env.WS.FACTK = []state.FACTKCombo{
+		{FA: 1, CTK: "f16", CTV: "f16"},
+		{FA: 1, CTK: "f16", CTV: "turbo3"},
+		{FA: 1, CTK: "q8_0", CTV: "q8_0"},
+	}
+	env.Runner.Selector.TurboAvailable = true
+
+	p := P6CtxSweep{}
+	if err := p.Run(context.Background(), env); err != nil {
+		t.Fatalf("P6: %v", err)
+	}
+	if env.Best.CTX != 512 {
+		t.Errorf("Best.CTX = %d, want 512 (K+V fallback should have succeeded)", env.Best.CTX)
+	}
+	if !containsInt(env.WS.CTX, 512) {
+		t.Error("expected 512 in WS.CTX")
+	}
+}
+
 func TestP7CombinationMatrix_GoalEarlyExit(t *testing.T) {
 	exec := &mockPhaseExecutor{} // all OK
 	env := newTestEnv(t, exec)
