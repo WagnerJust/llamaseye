@@ -50,6 +50,13 @@ func (P6CtxSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		default:
 		}
 
+		comboKey := fmt.Sprintf("%d", ctxVal)
+		if _, skip := ShouldSkip(env, 6, comboKey); skip {
+			env.WS.CTX = appendIfMissing(env.WS.CTX, ctxVal)
+			env.Best.CTX = ctxVal
+			continue
+		}
+
 		result := p6TryCtx(ctx, env, ctxVal, kvQualityOrder, bestCTKIdx, bestCTVIdx)
 
 		if result == "ok" {

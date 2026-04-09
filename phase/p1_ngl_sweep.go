@@ -61,6 +61,16 @@ func (P1NGLSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		default:
 		}
 
+		comboKey := fmt.Sprintf("%d", ngl)
+		if existing, skip := ShouldSkip(env, 1, comboKey); skip {
+			env.WS.NGL = append(env.WS.NGL, ngl)
+			if existing.TG > bestTG {
+				bestTG = existing.TG
+				env.Best.NGL = ngl
+			}
+			continue
+		}
+
 		status, tg, _ := RecordAndTrack(env, fmt.Sprintf("phase1/ngl=%d", ngl), bench.RunParams{
 			NGL:        ngl,
 			FA:         0,

@@ -48,6 +48,7 @@ func Parse(args []string, version string) (*config.Config, []string, error) {
 	fs.BoolVar(&cfg.DryRun, "dry-run", cfg.DryRun, "Print bench commands without executing")
 	fs.BoolVar(&cfg.NoConfirm, "no-confirm", cfg.NoConfirm, "Skip pre-sweep confirmation")
 	fs.BoolVar(&cfg.Report, "report", cfg.Report, "Regenerate sweep.md from existing .jsonl")
+	fs.BoolVar(&cfg.Focused, "focused", cfg.Focused, "Only run combos not already in sweep.jsonl (requires --only-phases)")
 
 	var onlyPhases, skipPhases string
 	fs.StringVar(&onlyPhases, "only-phases", "", "Run only these phases (comma-separated)")

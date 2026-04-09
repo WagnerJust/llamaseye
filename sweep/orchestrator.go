@@ -121,6 +121,20 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 		}
 	}
 
+	// --focused: load existing combos from sweep.jsonl for dedup
+	if s.Config.Focused {
+		combos, err := output.LoadExistingCombos(outputDir)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("--focused: load sweep.jsonl: %w", err)
+		}
+		env.SkipCombos = combos
+		total := 0
+		for _, m := range combos {
+			total += len(m)
+		}
+		s.Logger.Log("[FOCUSED] Loaded %d existing combos from sweep.jsonl", total)
+	}
+
 	// Build goal config
 	var goal *phase.GoalConfig
 	if s.Config.Goal != "" {

@@ -60,6 +60,17 @@ func (P5BatchSweep) Run(ctx context.Context, env *PhaseEnv) error {
 			continue
 		}
 
+		comboKey := fmt.Sprintf("%d_%d", pair.B, pair.UB)
+		if existing, skip := ShouldSkip(env, 5, comboKey); skip {
+			env.WS.BUB = append(env.WS.BUB, pair)
+			if existing.PP > bestPP {
+				bestPP = existing.PP
+				env.Best.B = pair.B
+				env.Best.UB = pair.UB
+			}
+			continue
+		}
+
 		label := fmt.Sprintf("phase5/b=%d_ub=%d", pair.B, pair.UB)
 		status, _, pp := RecordAndTrack(env, label, bench.RunParams{
 			NGL:        env.Best.NGL,

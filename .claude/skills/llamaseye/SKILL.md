@@ -98,6 +98,7 @@ To load a config from a non-default path: `./llamaseye --env-file ~/custom.env <
 | Diagnose OOM / unexpected behavior | `--debug` |
 | Get more diverse goal configs (not just tuning variants) | `--goal "..." --goal-hits 5` |
 | Re-run one or more phases | `--only-phases 6,7` |
+| Re-run a phase but only test new combos | `--only-phases 2 --focused` |
 | Skip Phase 7 | `--skip-phases 7` |
 | All models in a dir | `--models-dir <dir>` |
 | Curated model subset | `--model-list ~/list.txt` |
@@ -244,6 +245,7 @@ cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/be
 | `SWEEP_CTV_DIR` | `--ctv-dir` | `up` | V-cache quant sweep direction |
 | `SWEEP_SKIP_PHASES` | `--skip-phases` | *(unset)* | Skip these phases, comma-separated |
 | `SWEEP_ONLY_PHASES` | `--only-phases` | *(unset)* | Run only these phases, comma-separated |
+| `SWEEP_FOCUSED` | `--focused` | `false` | Only run combos not already in sweep.jsonl (requires `--only-phases`) |
 | `SWEEP_RESUME` | `--resume` | `false` | Skip already-completed phases |
 | `SWEEP_NO_CONFIRM` | `--no-confirm` | `false` | Skip pre-sweep confirmation |
 | `SWEEP_ASYMMETRIC_KV` | `--asymmetric-kv` | `true` | Include asymmetric K/V combos in Phase 2 (requires turbo binary) |

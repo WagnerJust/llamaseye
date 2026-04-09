@@ -140,6 +140,22 @@ func (P2FAKVSweep) Run(ctx context.Context, env *PhaseEnv) error {
 			continue
 		}
 
+		comboKey := fmt.Sprintf("%d_%s_%s", combo.FA, combo.CTK, combo.CTV)
+		if existing, skip := ShouldSkip(env, 2, comboKey); skip {
+			env.WS.FACTK = append(env.WS.FACTK, state.FACTKCombo{
+				FA:  combo.FA,
+				CTK: combo.CTK,
+				CTV: combo.CTV,
+			})
+			if existing.TG > bestTG {
+				bestTG = existing.TG
+				env.Best.FA = combo.FA
+				env.Best.CTK = combo.CTK
+				env.Best.CTV = combo.CTV
+			}
+			continue
+		}
+
 		label := fmt.Sprintf("phase2/fa=%d_ctk=%s_ctv=%s", combo.FA, combo.CTK, combo.CTV)
 		status, tg, _ := RecordAndTrack(env, label, bench.RunParams{
 			NGL:        env.Best.NGL,

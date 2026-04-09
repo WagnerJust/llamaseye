@@ -147,15 +147,21 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 								default:
 								}
 
-								label := fmt.Sprintf("p7/ngl=%d_fa=%d_ctk=%s_ctv=%s_nkvo=%d_b=%d_ub=%d_ctx=%d",
-									ngl, fa, ctk, ctv, nkvo, bub.B, bub.UB, ctxVal)
-
 								var threads *int
 								switch t := threadVal.(type) {
 								case int:
 									tc := t
 									threads = &tc
 								}
+
+								p7Key := FocusedComboKey(7, ngl, fa, ctk, ctv, nkvo, threads, bub.B, bub.UB, ctxVal)
+								if _, skip := ShouldSkip(env, 7, p7Key); skip {
+									runCount++
+									continue
+								}
+
+								label := fmt.Sprintf("p7/ngl=%d_fa=%d_ctk=%s_ctv=%s_nkvo=%d_b=%d_ub=%d_ctx=%d",
+									ngl, fa, ctk, ctv, nkvo, bub.B, bub.UB, ctxVal)
 
 								status, tg, pp := RecordAndTrack(env, label, bench.RunParams{
 									NGL:        ngl,

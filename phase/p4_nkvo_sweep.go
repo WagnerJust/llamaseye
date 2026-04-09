@@ -25,6 +25,16 @@ func (P4NKVOSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		default:
 		}
 
+		comboKey := fmt.Sprintf("%d", nkvo)
+		if existing, skip := ShouldSkip(env, 4, comboKey); skip {
+			env.WS.NKVO = append(env.WS.NKVO, nkvo)
+			if existing.TG > bestTG {
+				bestTG = existing.TG
+				env.Best.NKVO = nkvo
+			}
+			continue
+		}
+
 		status, tg, _ := RecordAndTrack(env, fmt.Sprintf("phase4/nkvo=%d", nkvo), bench.RunParams{
 			NGL:        env.Best.NGL,
 			FA:         env.Best.FA,

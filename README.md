@@ -180,6 +180,7 @@ If these are absent, llamaseye disables the corresponding thermal guard and logs
 | `--resume` | Resume a previous sweep, skipping completed phases |
 | `--overwrite` | Delete existing output dir and re-run everything |
 | `--only-phases <list>` | Comma-separated list of phase numbers to run (e.g. `0,1,7`) |
+| `--focused` | Only run combos not already in `sweep.jsonl` (requires `--only-phases`). Skipped combos still populate working sets for downstream phases. |
 | `--skip-phases <list>` | Comma-separated list of phase numbers to skip |
 | `--report` | Read-only: regenerate `sweep.md` from existing `sweep.jsonl` files without running any benchmarks. Also generates `summary.md` when multiple models are found. Combine with `--model`/`--models-dir` to target a subset; omit both to scan all subdirs of `--output-dir`. |
 | `--dry-run` | Print what would run without executing |
@@ -242,6 +243,7 @@ Every CLI flag can also be set via environment variable — useful for `.env` fi
 | `SWEEP_OVERWRITE` | `--overwrite` | `SWEEP_OVERWRITE=true` |
 | `SWEEP_SKIP_PHASES` | `--skip-phases` | `SWEEP_SKIP_PHASES=7` |
 | `SWEEP_ONLY_PHASES` | `--only-phases` | `SWEEP_ONLY_PHASES=0,1,6` |
+| `SWEEP_FOCUSED` | `--focused` | `SWEEP_FOCUSED=true` |
 | `SWEEP_NGL_STEP` | `--ngl-step` | `SWEEP_NGL_STEP=2` |
 | `SWEEP_START_NGL` | `--start-ngl` | `SWEEP_START_NGL=40` |
 | `SWEEP_NGL_DIR` | `--ngl-dir` | `SWEEP_NGL_DIR=down` |

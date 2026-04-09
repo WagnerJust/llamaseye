@@ -44,25 +44,32 @@ func (P3ThreadSweep) Run(ctx context.Context, env *PhaseEnv) error {
 	env.WS.Threads = nil
 
 	// System default run first (no -t flag)
-	status, tg, _ := RecordAndTrack(env, "phase3/threads=system_default", bench.RunParams{
-		NGL:        env.Best.NGL,
-		FA:         env.Best.FA,
-		CTK:        env.Best.CTK,
-		CTV:        env.Best.CTV,
-		NKVO:       0,
-		B:          env.Best.B,
-		UB:         env.Best.UB,
-		NPrompt:    512,
-		NGen:       128,
-		Reps:       env.Config.Repetitions,
-		Phase:      3,
-		PhaseLabel: "thread_sweep",
-	})
-	if status == bench.StatusOK {
+	if existing, skip := ShouldSkip(env, 3, "sys"); skip {
 		env.WS.Threads = append(env.WS.Threads, "system_default")
-		if tg > bestTG {
-			bestTG = tg
-			// system default → leave env.Best.Threads nil
+		if existing.TG > bestTG {
+			bestTG = existing.TG
+		}
+	} else {
+		status, tg, _ := RecordAndTrack(env, "phase3/threads=system_default", bench.RunParams{
+			NGL:        env.Best.NGL,
+			FA:         env.Best.FA,
+			CTK:        env.Best.CTK,
+			CTV:        env.Best.CTV,
+			NKVO:       0,
+			B:          env.Best.B,
+			UB:         env.Best.UB,
+			NPrompt:    512,
+			NGen:       128,
+			Reps:       env.Config.Repetitions,
+			Phase:      3,
+			PhaseLabel: "thread_sweep",
+		})
+		if status == bench.StatusOK {
+			env.WS.Threads = append(env.WS.Threads, "system_default")
+			if tg > bestTG {
+				bestTG = tg
+				// system default → leave env.Best.Threads nil
+			}
 		}
 	}
 
@@ -71,6 +78,17 @@ func (P3ThreadSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+
+		comboKey := fmt.Sprintf("%d", t)
+		if existing, skip := ShouldSkip(env, 3, comboKey); skip {
+			env.WS.Threads = append(env.WS.Threads, t)
+			if existing.TG > bestTG {
+				bestTG = existing.TG
+				tc := t
+				env.Best.Threads = &tc
+			}
+			continue
 		}
 
 		tc := t // capture
