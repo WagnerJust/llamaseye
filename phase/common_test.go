@@ -177,3 +177,53 @@ func TestFindFACTKByKV(t *testing.T) {
 		t.Error("should not find (q8_0, turbo3)")
 	}
 }
+
+func TestKVPrecisionValid(t *testing.T) {
+	// K more precise than V — valid
+	if !KVPrecisionValid("f16", "turbo2") {
+		t.Error("f16 K + turbo2 V should be valid (K more precise)")
+	}
+	if !KVPrecisionValid("q8_0", "q8_0") {
+		t.Error("equal precision should be valid")
+	}
+	// V more precise than K — invalid (wasteful)
+	if KVPrecisionValid("turbo2", "f16") {
+		t.Error("turbo2 K + f16 V should be invalid (V more precise than K)")
+	}
+	if KVPrecisionValid("turbo3", "q4_0") {
+		t.Error("turbo3 K + q4_0 V should be invalid (V more precise than K)")
+	}
+}
+
+func TestBestFAForCTK(t *testing.T) {
+	ws := []state.FACTKCombo{
+		{FA: 0, CTK: "f16", CTV: "f16"},
+		{FA: 1, CTK: "f16", CTV: "f16"},
+		{FA: 1, CTK: "q8_0", CTV: "q8_0"},
+	}
+	if BestFAForCTK(ws, "f16") != 1 {
+		t.Error("BestFAForCTK f16: want 1 (prefer fa=1)")
+	}
+	if BestFAForCTK(ws, "q8_0") != 1 {
+		t.Error("BestFAForCTK q8_0: want 1")
+	}
+	if BestFAForCTK(ws, "q4_0") != 0 {
+		t.Error("BestFAForCTK q4_0 (not in ws): want 0 (default)")
+	}
+}
+
+func TestUniqueCTKCTVValues(t *testing.T) {
+	ws := []state.FACTKCombo{
+		{FA: 0, CTK: "f16", CTV: "f16"},
+		{FA: 1, CTK: "f16", CTV: "turbo3"},
+		{FA: 1, CTK: "q8_0", CTV: "q8_0"},
+	}
+	ctks := UniqueCTKValues(ws)
+	if len(ctks) != 2 {
+		t.Errorf("UniqueCTKValues: got %v, want [f16 q8_0]", ctks)
+	}
+	ctvs := UniqueCTVValues(ws)
+	if len(ctvs) != 3 {
+		t.Errorf("UniqueCTVValues: got %v, want [f16 turbo3 q8_0]", ctvs)
+	}
+}

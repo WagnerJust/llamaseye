@@ -37,6 +37,8 @@ type BUBCombo struct {
 type WorkingSets struct {
 	NGL          []int        `json:"ngl"`
 	FACTKCombos  []FACTKCombo `json:"fa_ctk_combos"`
+	CTKValues    []string     `json:"ctk_values"`    // independent CTK axis for Phase 7
+	CTVValues    []string     `json:"ctv_values"`    // independent CTV axis for Phase 7
 	ThreadValues []any        `json:"thread_values"` // int or "system_default"
 	NKVOValues   []int        `json:"nkvo_values"`
 	BUBCombos    []BUBCombo   `json:"b_ub_combos"`

@@ -33,12 +33,14 @@ type BestConfig struct {
 
 // WorkingSets holds the accumulated ok values from each phase.
 type WorkingSets struct {
-	NGL     []int
-	FACTK   []state.FACTKCombo
-	Threads []any // int or "system_default" string
-	NKVO    []int
-	BUB     []state.BUBCombo
-	CTX     []int
+	NGL       []int
+	FACTK     []state.FACTKCombo
+	CTKValues []string // independent CTK axis populated by Phase 2, used by Phase 7
+	CTVValues []string // independent CTV axis populated by Phase 2, used by Phase 7
+	Threads   []any    // int or "system_default" string
+	NKVO      []int
+	BUB       []state.BUBCombo
+	CTX       []int
 }
 
 // PhaseEnv is the shared mutable state passed to every phase.
@@ -106,12 +108,21 @@ func (env *PhaseEnv) LoadFromState(s *state.State) {
 		env.Best.Threads = &t
 	}
 	env.WS = WorkingSets{
-		NGL:     s.WorkingSets.NGL,
-		FACTK:   s.WorkingSets.FACTKCombos,
-		NKVO:    s.WorkingSets.NKVOValues,
-		BUB:     s.WorkingSets.BUBCombos,
-		CTX:     s.WorkingSets.CTXValues,
-		Threads: s.WorkingSets.ThreadValues,
+		NGL:       s.WorkingSets.NGL,
+		FACTK:     s.WorkingSets.FACTKCombos,
+		CTKValues: s.WorkingSets.CTKValues,
+		CTVValues: s.WorkingSets.CTVValues,
+		NKVO:      s.WorkingSets.NKVOValues,
+		BUB:       s.WorkingSets.BUBCombos,
+		CTX:       s.WorkingSets.CTXValues,
+		Threads:   s.WorkingSets.ThreadValues,
+	}
+	// Migration: old state.json files lack ctk_values/ctv_values — derive from fa_ctk_combos.
+	if len(env.WS.CTKValues) == 0 {
+		env.WS.CTKValues = UniqueCTKValues(env.WS.FACTK)
+	}
+	if len(env.WS.CTVValues) == 0 {
+		env.WS.CTVValues = UniqueCTVValues(env.WS.FACTK)
 	}
 }
 
@@ -135,6 +146,8 @@ func (env *PhaseEnv) ToState(phasesComplete []int) *state.State {
 		WorkingSets: state.WorkingSets{
 			NGL:          env.WS.NGL,
 			FACTKCombos:  env.WS.FACTK,
+			CTKValues:    env.WS.CTKValues,
+			CTVValues:    env.WS.CTVValues,
 			NKVOValues:   env.WS.NKVO,
 			BUBCombos:    env.WS.BUB,
 			CTXValues:    env.WS.CTX,

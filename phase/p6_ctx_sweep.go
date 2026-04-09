@@ -21,9 +21,9 @@ func (P6CtxSweep) Run(ctx context.Context, env *PhaseEnv) error {
 
 	ctxList := applyCtxAxisOpts(env)
 
-	// Unified KV quality order (most to least compressed = index 0 is most compressed).
-	// f16 > q8_0 > q4_0 > iso4 > planar4 > turbo4 > iso3 > planar3 > turbo3 > turbo2
-	kvQualityOrder := []string{"turbo2", "turbo3", "planar3", "iso3", "turbo4", "planar4", "iso4", "q4_0", "q8_0", "f16"}
+	// KV quality order (index 0 = most compressed / lowest quality, last = f16 / highest quality).
+	// Shared with common.CTKQualityOrder — do not duplicate.
+	kvQualityOrder := CTKQualityOrder
 
 	bestCTKIdx := len(kvQualityOrder) - 1 // default = f16
 	for i, v := range kvQualityOrder {

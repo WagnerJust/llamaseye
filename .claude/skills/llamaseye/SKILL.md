@@ -387,12 +387,12 @@ ssh justin@justin-powerhouse "cd ~/Src/llamaseye && cp example.env .env"
 |-------|------|----------------|--------------|
 | 0 | NGL probe | Finds `max_ngl` — starts probe at model's layer count (from GGUF), falls back to 99 | Never; required |
 | 1 | NGL axis | GPU layer count 0 → `min(max_ngl, num_layers)` — capped at actual layer count (higher values are identical) | Only if offload situation already known |
-| 2 | FA + KV quant | FA on/off × KV types (f16, q8_0, q4_0, turbo2–turbo4) + asymmetric K/V combos when `--turbo-bench` is set | If KV choice already settled |
+| 2 | FA + KV quant | FA on/off × KV types (f16, q8_0, q4_0, turbo2–turbo4, iso3/4, planar3/4) + asymmetric K/V combos when turbo/rotor binary is set; populates `ctk_values` and `ctv_values` as independent axes | If KV choice already settled |
 | 3 | Thread count | CPU threads 1 → HW_CPU_LOGICAL | If no CPU offload layers |
 | 4 | KV offload (nkvo) | KV cache in VRAM vs RAM | If nkvo behaviour already known |
 | 5 | Batch/ubatch | Batch and micro-batch size combos | If throughput tuning not needed |
 | 6 | Context size | Prompt size 128 → 131072 (stops at OOM or timeout) | If context ceiling already known |
-| 7 | Combo matrix | Cartesian product of all values tested in phases 1–6; auto min-ctk lowered to include turbo types when Phase 6 hit OOM | Early exploration; run eventually |
+| 7 | Combo matrix | Cartesian product of `ctk_values × ctv_values` (independent) × all other working sets; precision filter skips pairs where V is more precise than K; auto min-ctk lowered when Phase 6 hit OOM | Early exploration; run eventually |
 
 ---
 
@@ -411,6 +411,8 @@ and Phase 7 follows automatically. `--min-*` filters Phase 7 only (phases 1–6 
 | Ubatch | `--start-ub N` | `--ub-dir up\|down` | `--min-ub N` |
 | Context | `--start-ctx N` | `--ctx-dir up\|down` | `--min-ctx N` |
 
-**KV quant direction "up"** = toward more compression: `f16 → q8_0 → q4_0 → turbo4 → turbo3 → turbo2`
-**`--min-ctk` quality order** (low→high quality): `turbo2 turbo3 turbo4 q4_0 q8_0 f16`
+**KV quant direction "up"** = toward more compression: `f16 → q8_0 → q4_0 → iso4 → planar4 → turbo4 → iso3 → planar3 → turbo3 → turbo2`
+**`--min-ctk` quality order** (low→high quality): `turbo2 turbo3 planar3 iso3 turbo4 planar4 iso4 q4_0 q8_0 f16`
 So `--min-ctk q8_0` keeps only `q8_0` and `f16` in Phase 7.
+
+**Phase 7 CTK × CTV cartesian product:** Phase 7 uses `ctk_values` and `ctv_values` as independent axes (not just the pairs tested in Phase 2). This surfaces asymmetric combos like `ctk=q8_0, ctv=iso3`. Pairs where V is more precise than K are skipped as wasteful (precision filter: `CTKQualityIndex(ctk) >= CTKQualityIndex(ctv)`).

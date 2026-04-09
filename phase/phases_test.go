@@ -209,6 +209,76 @@ func TestP2FAKVSweep_BuildsWorkingSet(t *testing.T) {
 	if len(env.WS.FACTK) < 4 {
 		t.Errorf("expected ≥4 FACTK combos, got %d", len(env.WS.FACTK))
 	}
+	// Independent CTK/CTV working sets must be populated
+	if len(env.WS.CTKValues) == 0 {
+		t.Error("expected non-empty WS.CTKValues after Phase 2")
+	}
+	if len(env.WS.CTVValues) == 0 {
+		t.Error("expected non-empty WS.CTVValues after Phase 2")
+	}
+}
+
+func TestP7CombinationMatrix_PrecisionFilter(t *testing.T) {
+	// Phase 7 should skip combos where V is more precise than K.
+	// With ctk=[q8_0] and ctv=[q8_0, f16], only (q8_0, q8_0) is valid;
+	// (q8_0, f16) is invalid (V=f16 more precise than K=q8_0).
+	// Provide exactly 1 response — if 2 runs happen the mock would default ok, but idx stays 1.
+	exec := &mockPhaseExecutor{responses: []phaseResponse{{stdout: okOutput()}}}
+	env := newTestEnv(t, exec)
+	env.WS.NGL = []int{32}
+	env.WS.CTKValues = []string{"q8_0"}
+	env.WS.CTVValues = []string{"q8_0", "f16"} // f16 more precise than q8_0 — should be filtered
+	env.WS.FACTK = []state.FACTKCombo{{FA: 1, CTK: "q8_0", CTV: "q8_0"}}
+	env.WS.NKVO = []int{0}
+	env.WS.Threads = []any{"system_default"}
+	env.WS.BUB = []state.BUBCombo{{B: 2048, UB: 512}}
+	env.WS.CTX = []int{8192}
+	env.Config.MinCTK = "q8_0"
+	env.Config.MinCtx = intPtr(8192)
+
+	p := P7CombinationMatrix{}
+	if err := p.Run(context.Background(), env); err != nil {
+		t.Fatalf("P7: %v", err)
+	}
+	// Only 1 valid combo (q8_0, q8_0) — idx must be exactly 1
+	if exec.idx != 1 {
+		t.Errorf("expected 1 run (precision filter should drop (q8_0,f16)), got %d", exec.idx)
+	}
+}
+
+func TestP7CombinationMatrix_IndependentKV(t *testing.T) {
+	// With ctk=[f16, q8_0] and ctv=[f16, q8_0], valid combos are:
+	// (f16,f16), (f16,q8_0), (q8_0,q8_0) — 3 total; (q8_0,f16) filtered (V more precise).
+	// Provide exactly 3 responses so idx ends at 3 if the right count is run.
+	responses := []phaseResponse{
+		{stdout: okOutput()},
+		{stdout: okOutput()},
+		{stdout: okOutput()},
+	}
+	exec := &mockPhaseExecutor{responses: responses}
+	env := newTestEnv(t, exec)
+	env.WS.NGL = []int{32}
+	env.WS.CTKValues = []string{"f16", "q8_0"}
+	env.WS.CTVValues = []string{"f16", "q8_0"}
+	env.WS.FACTK = []state.FACTKCombo{
+		{FA: 1, CTK: "f16", CTV: "f16"},
+		{FA: 1, CTK: "q8_0", CTV: "q8_0"},
+	}
+	env.WS.NKVO = []int{0}
+	env.WS.Threads = []any{"system_default"}
+	env.WS.BUB = []state.BUBCombo{{B: 2048, UB: 512}}
+	env.WS.CTX = []int{8192}
+	env.Config.MinCTK = "q8_0"
+	env.Config.MinCtx = intPtr(8192)
+
+	p := P7CombinationMatrix{}
+	if err := p.Run(context.Background(), env); err != nil {
+		t.Fatalf("P7: %v", err)
+	}
+	// (f16,f16), (f16,q8_0), (q8_0,q8_0) = 3 valid combos; idx must be 3
+	if exec.idx != 3 {
+		t.Errorf("expected 3 runs (independent KV cartesian product), got %d", exec.idx)
+	}
 }
 
 func TestP3ThreadSweep_BuildsWorkingSet(t *testing.T) {

@@ -516,21 +516,34 @@ ngl=max_ngl, nkvo=0, threads=system-default, b=2048, ub=512
 | `fa1_q8k_turbo2v` | `1` | `q8_0` | `turbo2` | ⚙️ Turbo binary + `--asymmetric-kv` |
 | `fa1_f16k_turbo3v` | `1` | `f16` | `turbo3` | ⚙️ Turbo binary + `--asymmetric-kv` |
 | `fa1_turbo4k_turbo2v` | `1` | `turbo4` | `turbo2` | ⚙️ Turbo binary + `--asymmetric-kv` |
+| `fa1_iso4` | `1` | `iso4` | `iso4` | 🔩 Rotor binary required |
+| `fa1_planar4` | `1` | `planar4` | `planar4` | 🔩 Rotor binary required |
+| `fa1_iso3` | `1` | `iso3` | `iso3` | 🔩 Rotor binary required |
+| `fa1_planar3` | `1` | `planar3` | `planar3` | 🔩 Rotor binary required |
+| `fa1_q8k_iso3v` | `1` | `q8_0` | `iso3` | 🔩 Rotor binary + `--asymmetric-kv` |
+| `fa1_q8k_planar3v` | `1` | `q8_0` | `planar3` | 🔩 Rotor binary + `--asymmetric-kv` |
+| `fa1_f16k_iso3v` | `1` | `f16` | `iso3` | 🔩 Rotor binary + `--asymmetric-kv` |
 
-Turbo rows (⚙️) are only included when `TURBO_AVAILABLE=true`. For turbo3 and
-turbo4, `turbo-llama-bench` auto-enables flash attention internally even when
-`-fa 0` is passed — testing `fa=0` would produce ambiguous output (the table
-would show `fa=0` but FA was actually active). Only `fa=1` is run for those
-types. For turbo2, FA is not required and the binary respects the `-fa` flag, so
-both `fa=0` and `fa=1` are tested. Treat any crash or OOM as a skipped config
-and continue.
+Turbo rows (⚙️) are only included when `TURBO_AVAILABLE=true`. Rotor rows (🔩)
+are only included when `ROTOR_AVAILABLE=true` (`--rotor-bench` set to a valid
+RotorQuant binary). For turbo3 and turbo4, `turbo-llama-bench` auto-enables flash
+attention internally even when `-fa 0` is passed — testing `fa=0` would produce
+ambiguous output (the table would show `fa=0` but FA was actually active). Only
+`fa=1` is run for those types. For turbo2, FA is not required and the binary
+respects the `-fa` flag, so both `fa=0` and `fa=1` are tested. Treat any crash or
+OOM as a skipped config and continue.
 
-**Asymmetric K/V combos** (last five rows) are tested when `TURBO_AVAILABLE=true`
-and `SWEEP_ASYMMETRIC_KV=true` (the default). TurboQuant research establishes that
-V cache compression has near-zero effect on attention quality — all quality
-degradation comes from K compression. These combos capture high K precision with
-aggressive V compression. Set `--no-asymmetric-kv` or `SWEEP_ASYMMETRIC_KV=false`
-to restrict Phase 2 to symmetric pairs only.
+**Asymmetric K/V combos** are tested when `TURBO_AVAILABLE=true` or
+`ROTOR_AVAILABLE=true`, and `SWEEP_ASYMMETRIC_KV=true` (the default). TurboQuant
+research establishes that V cache compression has near-zero effect on attention
+quality — all quality degradation comes from K compression. These combos capture
+high K precision with aggressive V compression. Set `--no-asymmetric-kv` or
+`SWEEP_ASYMMETRIC_KV=false` to restrict Phase 2 to symmetric pairs only.
+
+**Working set outputs:** Phase 2 populates three working sets:
+- `fa_ctk_combos` — all successful `(fa, ctk, ctv)` triples (used by Phase 6 OOM fallback)
+- `ctk_values` — unique CTK types observed across successful combos (used by Phase 7)
+- `ctv_values` — unique CTV types observed across successful combos (used by Phase 7)
 
 Run standard rows first (in the order listed), then turbo rows. If all `fa=1`
 configs OOM or crash (common with some MoE architectures), log a warning but
@@ -785,8 +798,8 @@ apply active minimum filters (explicit `--min-*` flags or auto-defaults above):
 
 ```
 ngl_values    = all ngl values from Phase 1 where status=ok
-fa_ctk_combos = all (fa, ctk, ctv) combos from Phase 2 where status=ok
-              # includes turbo combos when TURBO_AVAILABLE=true
+ctk_values    = unique CTK types from Phase 2 successful combos (independent axis)
+ctv_values    = unique CTV types from Phase 2 successful combos (independent axis)
 thread_values = all thread counts from Phase 3 where status=ok
               + [system_default]
 nkvo_values   = all nkvo values from Phase 4 where status=ok
@@ -794,24 +807,41 @@ b_ub_combos   = all (b, ub) pairs from Phase 5 where status=ok
 ctx_values    = all context sizes from Phase 6 where status=ok
 ```
 
-When turbo KV types are present in `fa_ctk_combos`, `select_binary()` is called
-per-combination inside the matrix loop and the correct binary is used
-automatically. Turbo combos participate fully in all ngl × thread × nkvo × b/ub
-× ctx combinations — the goal is to find the full frontier including what turbo
-types unlock at lower ngl values with very large contexts.
+**CTK and CTV are independent axes in Phase 7.** Phase 2 produces a set of
+unique CTK types and a separate set of unique CTV types. Phase 7 takes the full
+cartesian product `CTK × CTV`, not just the pairs tested in Phase 2. This
+surfaces asymmetric combos (e.g. `ctk=q8_0, ctv=iso3`) that were never run as a
+pair in Phase 2 but are still valid.
+
+**Precision filter:** A `(ctk, ctv)` pair where V is *more precise* than K is
+skipped as wasteful. The rule: `CTKQualityIndex(ctk) >= CTKQualityIndex(ctv)`,
+where quality order (low → high) is:
+`turbo2 → turbo3 → planar3 → iso3 → turbo4 → planar4 → iso4 → q4_0 → q8_0 → f16`.
+For example, `ctk=turbo3, ctv=f16` is invalid (V far more precise than K) and is
+skipped; `ctk=f16, ctv=turbo2` is valid.
+
+**FA lookup:** For each CTK in the matrix, the best FA value seen in Phase 2 for
+that CTK is used. Prefers `fa=1` when any Phase 2 successful combo used that CTK
+with `fa=1`.
+
+`select_binary()` is called per-combination to route turbo/rotor KV types to the
+correct binary automatically.
 
 The full combination set is:
 
 ```
 for ngl in ngl_values:
-  for (fa, ctk, ctv) in fa_ctk_combos:
-    for threads in thread_values:
-      for nkvo in nkvo_values:
-        for (b, ub) in b_ub_combos:
-          for ctx in ctx_values:
-            run: llama-bench -ngl {ngl} -fa {fa} -ctk {ctk} -ctv {ctv}
-                             -t {threads} -nkvo {nkvo} -b {b} -ub {ub}
-                             -p {ctx} -n 128 -r 3
+  for ctk in ctk_values:
+    for ctv in ctv_values:
+      if CTKQualityIndex(ctk) < CTKQualityIndex(ctv): skip  # V more precise than K
+      fa = BestFAForCTK(fa_ctk_combos, ctk)
+      for threads in thread_values:
+        for nkvo in nkvo_values:
+          for (b, ub) in b_ub_combos:
+            for ctx in ctx_values:
+              run: llama-bench -ngl {ngl} -fa {fa} -ctk {ctk} -ctv {ctv}
+                               -t {threads} -nkvo {nkvo} -b {b} -ub {ub}
+                               -p {ctx} -n 128 -r 3
 ```
 
 **This is intentionally a large number of runs.** On a model where each axis
@@ -953,8 +983,11 @@ interrupted.
     "fa_ctk_combos": [
       {"fa": 0, "ctk": "f16", "ctv": "f16"},
       {"fa": 1, "ctk": "f16", "ctv": "f16"},
-      {"fa": 1, "ctk": "q8_0", "ctv": "q8_0"}
+      {"fa": 1, "ctk": "q8_0", "ctv": "q8_0"},
+      {"fa": 1, "ctk": "q8_0", "ctv": "turbo3"}
     ],
+    "ctk_values": ["f16", "q8_0"],
+    "ctv_values": ["f16", "q8_0", "turbo3"],
     "thread_values": [4, 6, 8, 12],
     "nkvo_values": [0, 1],
     "b_ub_combos": [
@@ -1174,7 +1207,7 @@ main()
     load_state()             # resume if state.json exists and --resume set
     phase0_ngl_probe()       # → max_ngl
     phase1_ngl_sweep()       # → working_sets.ngl
-    phase2_fa_kv_sweep()     # → working_sets.fa_ctk_combos
+    phase2_fa_kv_sweep()     # → working_sets.fa_ctk_combos, working_sets.ctk_values, working_sets.ctv_values
     phase3_thread_sweep()    # → working_sets.thread_values
     phase4_nkvo_sweep()      # → working_sets.nkvo_values
     phase5_batch_sweep()     # → working_sets.b_ub_combos

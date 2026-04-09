@@ -41,11 +41,27 @@ func (P2FAKVSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		// These are omitted when --no-asymmetric-kv is set.
 		if env.Config.AsymmetricKV {
 			combos = append(combos,
-				faCombo{1, "q8_0", "turbo4"},  // High K precision, meaningful V compression
-				faCombo{1, "q8_0", "turbo3"},  // High K precision, max V compression
-				faCombo{1, "q8_0", "turbo2"},  // High K precision, extreme V compression
-				faCombo{1, "f16", "turbo3"},   // Full K precision, strong V compression
+				faCombo{1, "q8_0", "turbo4"},   // High K precision, meaningful V compression
+				faCombo{1, "q8_0", "turbo3"},   // High K precision, max V compression
+				faCombo{1, "q8_0", "turbo2"},   // High K precision, extreme V compression
+				faCombo{1, "f16", "turbo3"},    // Full K precision, strong V compression
 				faCombo{1, "turbo4", "turbo2"}, // Moderate K, aggressive V
+			)
+		}
+	}
+	// RotorQuant combos (only when RotorQuant binary available)
+	if env.Runner.Selector.RotorAvailable {
+		combos = append(combos,
+			faCombo{1, "iso4", "iso4"},
+			faCombo{1, "planar4", "planar4"},
+			faCombo{1, "iso3", "iso3"},
+			faCombo{1, "planar3", "planar3"},
+		)
+		if env.Config.AsymmetricKV {
+			combos = append(combos,
+				faCombo{1, "q8_0", "iso3"},    // High K precision, strong V compression
+				faCombo{1, "q8_0", "planar3"}, // High K precision, strong V compression
+				faCombo{1, "f16", "iso3"},     // Full K precision, strong V compression
 			)
 		}
 	}
@@ -58,8 +74,12 @@ func (P2FAKVSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		faSet[v] = true
 	}
 
-	// Apply CTK direction filter
-	ctkFullOrder := []string{"f16", "q8_0", "q4_0", "turbo4", "turbo3", "turbo2"}
+	// Apply CTK direction filter using the shared quality ordering (desc = toward more compression).
+	// CTKQualityOrder is low→high quality; reverse it for the "up" direction (f16 first → turbo2 last).
+	ctkFullOrder := make([]string, len(CTKQualityOrder))
+	for i, v := range CTKQualityOrder {
+		ctkFullOrder[len(CTKQualityOrder)-1-i] = v
+	}
 	ctkFiltered := ApplyAxisOpts(ctkFullOrder, env.Config.StartCTK, env.Config.DirCTK,
 		func(f string, a ...any) { env.Logger.Warn(f, a...) })
 	ctkSet := make(map[string]bool)
@@ -88,8 +108,11 @@ func (P2FAKVSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		if combo.FA == 0 && combo.CTK == "q4_0" {
 			continue
 		}
-		// turbo types only work when turbo binary is available
+		// turbo/rotor types only work when their binary is available
 		if strings.HasPrefix(combo.CTK, "turbo") && !env.Runner.Selector.TurboAvailable {
+			continue
+		}
+		if (strings.HasPrefix(combo.CTK, "planar") || strings.HasPrefix(combo.CTK, "iso")) && !env.Runner.Selector.RotorAvailable {
 			continue
 		}
 
@@ -127,6 +150,10 @@ func (P2FAKVSweep) Run(ctx context.Context, env *PhaseEnv) error {
 	if len(env.WS.FACTK) == 0 {
 		env.WS.FACTK = []state.FACTKCombo{{FA: 0, CTK: "f16", CTV: "f16"}}
 	}
+	// Derive independent CTK/CTV working sets for Phase 7.
+	env.WS.CTKValues = UniqueCTKValues(env.WS.FACTK)
+	env.WS.CTVValues = UniqueCTVValues(env.WS.FACTK)
+
 	env.Logger.Log("[Phase 2] Best: fa=%d ctk=%s (TG=%.2f t/s)",
 		env.Best.FA, env.Best.CTK, bestTG)
 	return nil
