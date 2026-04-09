@@ -207,6 +207,9 @@ These control where each phase begins its sweep and which direction it moves. Di
 | `--ctx-step-min <n>` | Minimum bisection step for `--fine-ctx` (default: `8192`) |
 | `--start-ctk <type>` | Begin KV quant sweep at this type |
 | `--ctk-dir up\|down` | KV type sweep direction (default: `up` = toward more compression) |
+| `--start-ctv <type>` | Begin V-cache quant sweep at this type (ignored when `--ctv` is set) |
+| `--ctv-dir up\|down` | V-cache type sweep direction (default: `up` = toward more compression) |
+| `--ctv <list>` | Restrict Phase 2 to these CTV values (comma-separated, e.g. `turbo3,turbo2`); takes precedence over `--start-ctv` / `--ctv-dir` |
 | `--start-b <n>` | Begin batch size sweep at this value |
 | `--b-dir up\|down` | Batch sweep direction (default: `up`) |
 | `--start-ub <n>` | Begin ubatch size sweep at this value |

@@ -87,6 +87,27 @@ func (P2FAKVSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		ctkSet[v] = true
 	}
 
+	// Apply CTV filter. --ctv (explicit list) takes precedence over --start-ctv / --ctv-dir.
+	ctvSet := make(map[string]bool)
+	if env.Config.CTV != "" {
+		for _, v := range strings.Split(env.Config.CTV, ",") {
+			v = strings.TrimSpace(v)
+			if v != "" {
+				ctvSet[v] = true
+			}
+		}
+	} else {
+		ctvFullOrder := make([]string, len(CTKQualityOrder))
+		for i, v := range CTKQualityOrder {
+			ctvFullOrder[len(CTKQualityOrder)-1-i] = v
+		}
+		ctvFiltered := ApplyAxisOpts(ctvFullOrder, env.Config.StartCTV, env.Config.DirCTV,
+			func(f string, a ...any) { env.Logger.Warn(f, a...) })
+		for _, v := range ctvFiltered {
+			ctvSet[v] = true
+		}
+	}
+
 	bestTG := -1.0
 	env.WS.FACTK = nil
 
@@ -102,6 +123,9 @@ func (P2FAKVSweep) Run(ctx context.Context, env *PhaseEnv) error {
 			continue
 		}
 		if !ctkSet[combo.CTK] {
+			continue
+		}
+		if !ctvSet[combo.CTV] {
 			continue
 		}
 		// fa=0 + q4_0 is invalid

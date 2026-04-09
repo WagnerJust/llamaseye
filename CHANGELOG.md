@@ -6,6 +6,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.6.0] — 2026-04-08
+
+### Added
+- **CTV filter axis** — Phase 2 now supports independent V-cache type filtering via three new flags:
+  - `--ctv <list>` (env: `SWEEP_CTV`) — comma-separated explicit CTV values (e.g. `turbo3,turbo2`); takes precedence over the other two flags
+  - `--start-ctv <type>` (env: `SWEEP_START_CTV`) — begin V-cache sweep at this type, same quality ordering as CTK
+  - `--ctv-dir up|down` (env: `SWEEP_CTV_DIR`, default: `up`) — V-cache sweep direction
+  Mirrors the existing `--start-ctk` / `--ctk-dir` pattern. Closes #32.
+
+---
+
 ## [1.5.0] — 2026-04-09
 
 ### Added

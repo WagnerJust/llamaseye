@@ -1175,6 +1175,8 @@ These variables were previously CLI-only but are now also read from the environm
 | `SWEEP_START_THREADS` | *(unset)* | Begin thread sweep at this value (`--start-threads`) |
 | `SWEEP_START_CTX` | *(unset)* | Begin context sweep at this prompt size (`--start-ctx`) |
 | `SWEEP_START_CTK` | *(unset)* | Begin KV quant sweep at this type (`--start-ctk`) |
+| `SWEEP_START_CTV` | *(unset)* | Begin V-cache quant sweep at this type (`--start-ctv`); ignored when `SWEEP_CTV` is set |
+| `SWEEP_CTV` | *(unset)* | Restrict Phase 2 to these CTV values, comma-separated (`--ctv`); overrides `SWEEP_START_CTV`/`SWEEP_CTV_DIR` |
 | `SWEEP_START_B` | *(unset)* | Begin batch sweep at this value (`--start-b`) |
 | `SWEEP_START_UB` | *(unset)* | Begin ubatch sweep at this value (`--start-ub`) |
 | `SWEEP_START_FA` | *(unset)* | Begin FA sweep at this value 0\|1 (`--start-fa`) |
@@ -1182,6 +1184,7 @@ These variables were previously CLI-only but are now also read from the environm
 | `SWEEP_THREADS_DIR` | `up` | Thread sweep direction up\|down (`--threads-dir`) |
 | `SWEEP_CTX_DIR` | `up` | Context sweep direction up\|down (`--ctx-dir`) |
 | `SWEEP_CTK_DIR` | `up` | KV quant sweep direction up\|down (`--ctk-dir`) |
+| `SWEEP_CTV_DIR` | `up` | V-cache quant sweep direction up\|down (`--ctv-dir`); ignored when `SWEEP_CTV` is set |
 | `SWEEP_B_DIR` | `up` | Batch sweep direction up\|down (`--b-dir`) |
 | `SWEEP_UB_DIR` | `up` | Ubatch sweep direction up\|down (`--ub-dir`) |
 | `SWEEP_FA_DIR` | `up` | FA sweep direction up\|down (`--fa-dir`) |
@@ -1397,6 +1400,11 @@ Utility:
                         Full ordering (up=more compression):
                         f16 → q8_0 → q4_0 → turbo4 → turbo3 → turbo2
   --ctk-dir up|down     KV type sweep direction. Default: up.
+  --start-ctv TYPE      Begin V-cache quant sweep at TYPE. Same ordering as CTK.
+                        Ignored when --ctv is set.
+  --ctv-dir up|down     V-cache type sweep direction. Default: up. Ignored when --ctv is set.
+  --ctv LIST            Restrict Phase 2 to these CTV values (comma-separated,
+                        e.g. turbo3,turbo2). Takes precedence over --start-ctv/--ctv-dir.
   --start-b N           Begin batch size sweep at N.
   --b-dir up|down       Batch size direction: up=512→2048, down=2048→512. Default: up.
   --start-ub N          Begin ubatch size sweep at N.
