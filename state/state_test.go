@@ -182,11 +182,25 @@ func TestRoundTrip_CTKCTVValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(loaded.WorkingSets.CTKValues) != 2 {
-		t.Errorf("CTKValues len = %d, want 2", len(loaded.WorkingSets.CTKValues))
+	wantCTK := []string{"f16", "q8_0"}
+	if len(loaded.WorkingSets.CTKValues) != len(wantCTK) {
+		t.Errorf("CTKValues = %v, want %v", loaded.WorkingSets.CTKValues, wantCTK)
+	} else {
+		for i, v := range wantCTK {
+			if loaded.WorkingSets.CTKValues[i] != v {
+				t.Errorf("CTKValues[%d] = %q, want %q", i, loaded.WorkingSets.CTKValues[i], v)
+			}
+		}
 	}
-	if len(loaded.WorkingSets.CTVValues) != 3 {
-		t.Errorf("CTVValues len = %d, want 3", len(loaded.WorkingSets.CTVValues))
+	wantCTV := []string{"f16", "q8_0", "turbo3"}
+	if len(loaded.WorkingSets.CTVValues) != len(wantCTV) {
+		t.Errorf("CTVValues = %v, want %v", loaded.WorkingSets.CTVValues, wantCTV)
+	} else {
+		for i, v := range wantCTV {
+			if loaded.WorkingSets.CTVValues[i] != v {
+				t.Errorf("CTVValues[%d] = %q, want %q", i, loaded.WorkingSets.CTVValues[i], v)
+			}
+		}
 	}
 }
 

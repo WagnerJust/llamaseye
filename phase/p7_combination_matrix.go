@@ -65,7 +65,7 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 	// Goal mode: sort NGL descending so best offload configs surface first
 	if p.Goal != nil {
 		sortIntsDesc(nglP7)
-		env.Logger.Log("[Phase 7] Goal mode: ctx≥%d tg≥%.1f pp≥%.1f — stopping after %d distinct (ngl,ctk,nkvo,ctx) configs",
+		env.Logger.Log("[Phase 7] Goal mode: ctx≥%d tg≥%.1f pp≥%.1f — stopping after %d distinct (ngl,ctk,ctv,nkvo,ctx) configs",
 			p.Goal.CtxMin, p.Goal.TGMin, p.Goal.PPMin, p.Goal.MaxHits)
 	}
 
@@ -79,13 +79,14 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 		}
 	}
 	if validKVPairs == 0 {
-		validKVPairs = 1
+		env.Logger.Warn("[Phase 7] No valid (ctk, ctv) pairs after precision filter — check ctk_values/ctv_values in working set. Phase 7 skipped.")
+		return nil
 	}
 	total := len(nglP7) * validKVPairs * len(threadP7) * len(nkvoP7) * len(bubP7) * len(ctxP7)
 	env.Logger.Log("[Phase 7] Estimated combinations: %d (ngl×%d kv_pairs×%d threads×%d nkvo×%d b_ub×%d ctx×%d)",
 		total, len(nglP7), validKVPairs, len(threadP7), len(nkvoP7), len(bubP7), len(ctxP7))
 
-	// Context OOM ceiling cache: key = "ngl_ctk_nkvo"
+	// Context OOM ceiling cache: key = "ngl_ctk_ctv_nkvo"
 	ctxCeil := make(map[string]int)
 
 	runCount := 0
@@ -213,9 +214,10 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 												goalDone = true
 											}
 										} else if tg > goalTuples[tupleKey] {
+											prevTG := goalTuples[tupleKey]
 											goalTuples[tupleKey] = tg
 											env.Logger.Debugf("[Phase 7] Goal tuple ngl=%d ctk=%s ctv=%s nkvo=%d ctx=%d improved: %.2f→%.2f t/s",
-												ngl, ctk, ctv, nkvo, ctxVal, goalTuples[tupleKey], tg)
+												ngl, ctk, ctv, nkvo, ctxVal, prevTG, tg)
 										}
 									}
 								}

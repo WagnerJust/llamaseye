@@ -172,7 +172,7 @@ func TestParseLlamaBenchOutput(t *testing.T) {
 
 func TestBinarySelector_Standard(t *testing.T) {
 	sel := &BinarySelector{StandardBin: "/std/llama-bench", TurboAvailable: false}
-	path, label, err := sel.Select("f16")
+	path, label, err := sel.Select("f16", "f16")
 	if err != nil {
 		t.Fatalf("Select f16: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestBinarySelector_Standard(t *testing.T) {
 
 func TestBinarySelector_TurboUnavailable(t *testing.T) {
 	sel := &BinarySelector{StandardBin: "/std/llama-bench", TurboAvailable: false}
-	_, _, err := sel.Select("turbo3")
+	_, _, err := sel.Select("turbo3", "turbo3")
 	if err == nil {
 		t.Error("expected error for turbo type when TurboAvailable=false")
 	}
@@ -198,9 +198,28 @@ func TestBinarySelector_TurboAvailable(t *testing.T) {
 		TurboBin:       "/turbo/llama-bench",
 		TurboAvailable: true,
 	}
-	path, label, err := sel.Select("turbo3")
+	path, label, err := sel.Select("turbo3", "turbo3")
 	if err != nil {
 		t.Fatalf("Select turbo3: %v", err)
+	}
+	if path != "/turbo/llama-bench" {
+		t.Errorf("path = %q, want /turbo/llama-bench", path)
+	}
+	if label != "turboquant" {
+		t.Errorf("label = %q, want turboquant", label)
+	}
+}
+
+func TestBinarySelector_TurboViaCTV(t *testing.T) {
+	// CTK is standard but CTV is turbo — must route to turbo binary.
+	sel := &BinarySelector{
+		StandardBin:    "/std/llama-bench",
+		TurboBin:       "/turbo/llama-bench",
+		TurboAvailable: true,
+	}
+	path, label, err := sel.Select("q8_0", "turbo3")
+	if err != nil {
+		t.Fatalf("Select q8_0/turbo3: %v", err)
 	}
 	if path != "/turbo/llama-bench" {
 		t.Errorf("path = %q, want /turbo/llama-bench", path)
@@ -213,7 +232,7 @@ func TestBinarySelector_TurboAvailable(t *testing.T) {
 func TestBinarySelector_RotorUnavailable(t *testing.T) {
 	sel := &BinarySelector{StandardBin: "/std/llama-bench", RotorAvailable: false}
 	for _, typ := range []string{"planar3", "planar4", "iso3", "iso4"} {
-		_, _, err := sel.Select(typ)
+		_, _, err := sel.Select(typ, typ)
 		if err == nil {
 			t.Errorf("expected error for rotor type %q when RotorAvailable=false", typ)
 		}
@@ -227,7 +246,7 @@ func TestBinarySelector_RotorAvailable(t *testing.T) {
 		RotorAvailable: true,
 	}
 	for _, typ := range []string{"planar3", "planar4", "iso3", "iso4"} {
-		path, label, err := sel.Select(typ)
+		path, label, err := sel.Select(typ, typ)
 		if err != nil {
 			t.Fatalf("Select %s: %v", typ, err)
 		}
@@ -237,6 +256,25 @@ func TestBinarySelector_RotorAvailable(t *testing.T) {
 		if label != "rotorquant" {
 			t.Errorf("label = %q, want rotorquant", label)
 		}
+	}
+}
+
+func TestBinarySelector_RotorViaCTV(t *testing.T) {
+	// CTK is standard but CTV is rotor — must route to rotor binary.
+	sel := &BinarySelector{
+		StandardBin:    "/std/llama-bench",
+		RotorBin:       "/rotor/llama-bench",
+		RotorAvailable: true,
+	}
+	path, label, err := sel.Select("q8_0", "iso3")
+	if err != nil {
+		t.Fatalf("Select q8_0/iso3: %v", err)
+	}
+	if path != "/rotor/llama-bench" {
+		t.Errorf("path = %q, want /rotor/llama-bench", path)
+	}
+	if label != "rotorquant" {
+		t.Errorf("label = %q, want rotorquant", label)
 	}
 }
 

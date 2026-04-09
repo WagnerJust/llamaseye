@@ -60,7 +60,7 @@ type llamaBenchLine struct {
 
 // RunBench executes a single llama-bench invocation and returns the result.
 func (r *BenchRunner) RunBench(label string, p RunParams) (*RunResult, error) {
-	binary, binaryLabel, err := r.Selector.Select(p.CTK)
+	binary, binaryLabel, err := r.Selector.Select(p.CTK, p.CTV)
 	if err != nil {
 		return nil, err
 	}

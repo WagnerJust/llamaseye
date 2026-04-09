@@ -8,7 +8,8 @@ import (
 	"github.com/WagnerJust/llamaseye/state"
 )
 
-// CTKQualityOrder defines KV type ordering from least to most compressed (least to most quality).
+// CTKQualityOrder defines KV type ordering from lowest to highest quality
+// (most compressed to least compressed).
 // Quality order (ascending): turbo2 < turbo3 < planar3 < iso3 < turbo4 < planar4 < iso4 < q4_0 < q8_0 < f16
 var CTKQualityOrder = []string{"turbo2", "turbo3", "planar3", "iso3", "turbo4", "planar4", "iso4", "q4_0", "q8_0", "f16"}
 
@@ -230,7 +231,7 @@ func RecordAndTrack(env *PhaseEnv, label string, p bench.RunParams) (bench.Statu
 
 	binaryLabel := "standard"
 	if p.CTK != "" {
-		_, bl, _ := env.Runner.Selector.Select(p.CTK)
+		_, bl, _ := env.Runner.Selector.Select(p.CTK, p.CTV)
 		binaryLabel = bl
 	}
 
