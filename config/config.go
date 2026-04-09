@@ -53,6 +53,7 @@ type Config struct {
 	StartThreads *int
 	StartCtx     *int
 	StartCTK     string
+	StartCTV     string
 	StartB       *int
 	StartUB      *int
 	StartFA      *int
@@ -62,9 +63,13 @@ type Config struct {
 	DirThreads string
 	DirCtx     string
 	DirCTK     string
+	DirCTV     string
 	DirB       string
 	DirUB      string
 	DirFA      string
+
+	// Explicit CTV value list (comma-separated); takes precedence over StartCTV/DirCTV
+	CTV string
 
 	// Phase 7 minimums
 	MinNGL     *int
@@ -165,6 +170,7 @@ func Defaults() *Config {
 		DirThreads:      envStr("SWEEP_THREADS_DIR", "up"),
 		DirCtx:          envStr("SWEEP_CTX_DIR", "up"),
 		DirCTK:          envStr("SWEEP_CTK_DIR", "up"),
+		DirCTV:          envStr("SWEEP_CTV_DIR", "up"),
 		DirB:            envStr("SWEEP_B_DIR", "up"),
 		DirUB:           envStr("SWEEP_UB_DIR", "up"),
 		DirFA:           envStr("SWEEP_FA_DIR", "up"),
@@ -175,6 +181,7 @@ func Defaults() *Config {
 		FineCtx:         envBool("SWEEP_FINE_CTX", false),
 		CtxStepMin:      envInt("SWEEP_CTX_STEP_MIN", 8192),
 		OptimizedSweep:  envBool("SWEEP_OPTIMIZED_SWEEP", false),
+		CTV:             envStr("SWEEP_CTV", ""),
 		AsymmetricKV:   envBool("SWEEP_ASYMMETRIC_KV", true),
 		Debug:           envBool("SWEEP_DEBUG", false),
 	}
@@ -259,7 +266,7 @@ func (c *Config) Validate() error {
 				strings.Join(conflicts, ", "))
 		}
 	}
-	for _, d := range []string{c.DirNGL, c.DirThreads, c.DirCtx, c.DirCTK, c.DirB, c.DirUB, c.DirFA} {
+	for _, d := range []string{c.DirNGL, c.DirThreads, c.DirCtx, c.DirCTK, c.DirCTV, c.DirB, c.DirUB, c.DirFA} {
 		if d != "up" && d != "down" {
 			return fmt.Errorf("direction flags must be 'up' or 'down', got %q", d)
 		}

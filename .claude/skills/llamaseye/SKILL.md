@@ -236,9 +236,12 @@ cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/be
 | `SWEEP_MIN_CTK` | `--min-ctk` | *(unset)* | Exclude KV types below TYPE from Phase 7 (e.g. `q8_0`) |
 | `SWEEP_START_NGL` | `--start-ngl` | *(unset)* | Begin NGL sweep at this value |
 | `SWEEP_START_CTK` | `--start-ctk` | *(unset)* | Begin KV quant sweep at this type |
+| `SWEEP_START_CTV` | `--start-ctv` | *(unset)* | Begin V-cache quant sweep at this type |
+| `SWEEP_CTV` | `--ctv` | *(unset)* | Restrict Phase 2 to these CTV values (comma-separated; overrides start-ctv/ctv-dir) |
 | `SWEEP_NGL_DIR` | `--ngl-dir` | `up` | NGL sweep direction (`up`\|`down`) |
 | `SWEEP_CTX_DIR` | `--ctx-dir` | `up` | Context sweep direction |
 | `SWEEP_CTK_DIR` | `--ctk-dir` | `up` | KV quant sweep direction |
+| `SWEEP_CTV_DIR` | `--ctv-dir` | `up` | V-cache quant sweep direction |
 | `SWEEP_SKIP_PHASES` | `--skip-phases` | *(unset)* | Skip these phases, comma-separated |
 | `SWEEP_ONLY_PHASES` | `--only-phases` | *(unset)* | Run only these phases, comma-separated |
 | `SWEEP_RESUME` | `--resume` | `false` | Skip already-completed phases |
@@ -406,6 +409,7 @@ and Phase 7 follows automatically. `--min-*` filters Phase 7 only (phases 1–6 
 | NGL | `--start-ngl N` | `--ngl-dir up\|down` | `--min-ngl N` |
 | Flash Attention | `--start-fa 0\|1` | `--fa-dir up\|down` | — |
 | KV quant (ctk) | `--start-ctk TYPE` | `--ctk-dir up\|down` | `--min-ctk TYPE` |
+| V-cache quant (ctv) | `--start-ctv TYPE` or `--ctv LIST` | `--ctv-dir up\|down` | — |
 | Threads | `--start-threads N` | `--threads-dir up\|down` | `--min-threads N` |
 | Batch | `--start-b N` | `--b-dir up\|down` | `--min-b N` |
 | Ubatch | `--start-ub N` | `--ub-dir up\|down` | `--min-ub N` |
