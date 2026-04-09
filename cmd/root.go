@@ -30,6 +30,7 @@ func Parse(args []string, version string) (*config.Config, []string, error) {
 	// Binary paths
 	fs.StringVar(&cfg.LlamaBenchBin, "llama-bench", cfg.LlamaBenchBin, "llama-bench binary path")
 	fs.StringVar(&cfg.TurboBenchBin, "turbo-bench", cfg.TurboBenchBin, "turbo-bench binary path (optional)")
+	fs.StringVar(&cfg.RotorBenchBin, "rotor-bench", cfg.RotorBenchBin, "rotor-bench binary path for planar/iso KV types (optional)")
 
 	// Sweep tuning
 	fs.IntVar(&cfg.NGLStep, "ngl-step", cfg.NGLStep, "NGL step size for phase 1")

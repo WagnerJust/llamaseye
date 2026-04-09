@@ -21,12 +21,21 @@ func (P6CtxSweep) Run(ctx context.Context, env *PhaseEnv) error {
 
 	ctxList := applyCtxAxisOpts(env)
 
-	// CTK quality order for fallbacks (most to least compressed = index 0 is most compressed)
-	ctkQualityOrder := []string{"turbo2", "turbo3", "turbo4", "q4_0", "q8_0", "f16"}
-	bestCTKIdx := len(ctkQualityOrder) - 1 // default = f16
-	for i, v := range ctkQualityOrder {
+	// Unified KV quality order (most to least compressed = index 0 is most compressed).
+	// f16 > q8_0 > q4_0 > iso4 > planar4 > turbo4 > iso3 > planar3 > turbo3 > turbo2
+	kvQualityOrder := []string{"turbo2", "turbo3", "planar3", "iso3", "turbo4", "planar4", "iso4", "q4_0", "q8_0", "f16"}
+
+	bestCTKIdx := len(kvQualityOrder) - 1 // default = f16
+	for i, v := range kvQualityOrder {
 		if v == env.Best.CTK {
 			bestCTKIdx = i
+			break
+		}
+	}
+	bestCTVIdx := len(kvQualityOrder) - 1 // default = f16
+	for i, v := range kvQualityOrder {
+		if v == env.Best.CTV {
+			bestCTVIdx = i
 			break
 		}
 	}
@@ -41,7 +50,7 @@ func (P6CtxSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		default:
 		}
 
-		result := p6TryCtx(ctx, env, ctxVal, ctkQualityOrder, bestCTKIdx)
+		result := p6TryCtx(ctx, env, ctxVal, kvQualityOrder, bestCTKIdx, bestCTVIdx)
 
 		if result == "ok" {
 			continue
@@ -67,7 +76,7 @@ func (P6CtxSweep) Run(ctx context.Context, env *PhaseEnv) error {
 					break
 				}
 				env.Logger.Log("[Phase 6] Bisect probe: ctx=%d (range %d–%d)", mid, env.Best.CTX, hi)
-				bisectResult := p6TryCtx(ctx, env, mid, ctkQualityOrder, bestCTKIdx)
+				bisectResult := p6TryCtx(ctx, env, mid, kvQualityOrder, bestCTKIdx, bestCTVIdx)
 				switch bisectResult {
 				case "ok":
 					// BEST_CTX updated by p6TryCtx
@@ -100,7 +109,7 @@ func (P6CtxSweep) Run(ctx context.Context, env *PhaseEnv) error {
 // p6TryCtx tries the primary config at ctx, then fallbacks if it fails.
 // Returns "ok", "timeout", or "fail".
 func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
-	ctkOrder []string, bestCTKIdx int) string {
+	kvOrder []string, bestCTKIdx, bestCTVIdx int) string {
 
 	// Primary config
 	status, _, _ := RecordAndTrack(env, fmt.Sprintf("phase6/ctx=%d", ctxVal), bench.RunParams{
@@ -140,7 +149,7 @@ func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
 
 	var fallbacks []fallback
 
-	// Part 1: nkvo flip
+	// Part 1: nkvo flip (keep current CTK/CTV)
 	altNKVO := 1 - env.Best.NKVO
 	if containsInt(env.WS.NKVO, altNKVO) {
 		fallbacks = append(fallbacks, fallback{
@@ -151,10 +160,35 @@ func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
 		})
 	}
 
-	// Part 2: more-compressed ctk types
+	// Part 2: V-first — keep CTK fixed, try more-compressed CTV types.
+	// V compression is effectively free quality-wise; exhaust V before touching K.
+	for i := 0; i < bestCTVIdx; i++ {
+		fbCTV := kvOrder[i]
+		if !kvTypeAvailable(fbCTV, env.Runner.Selector.TurboAvailable, env.Runner.Selector.RotorAvailable) {
+			continue
+		}
+		fa, found := FindFACTKByKV(env.WS.FACTK, env.Best.CTK, fbCTV)
+		if !found {
+			continue
+		}
+		for _, nkvoFB := range []int{0, 1} {
+			if !containsInt(env.WS.NKVO, nkvoFB) {
+				continue
+			}
+			fallbacks = append(fallbacks, fallback{
+				FA:   fa,
+				CTK:  env.Best.CTK,
+				CTV:  fbCTV,
+				NKVO: nkvoFB,
+			})
+		}
+	}
+
+	// Part 3: K+V — try more-compressed CTK types with their paired CTV.
+	// Only reached when V-first fallbacks are exhausted.
 	for i := 0; i < bestCTKIdx; i++ {
-		fbCTK := ctkOrder[i]
-		if strings.HasPrefix(fbCTK, "turbo") && !env.Runner.Selector.TurboAvailable {
+		fbCTK := kvOrder[i]
+		if !kvTypeAvailable(fbCTK, env.Runner.Selector.TurboAvailable, env.Runner.Selector.RotorAvailable) {
 			continue
 		}
 		fa, ctv, found := BestFACTVForCTK(env.WS.FACTK, fbCTK)
@@ -181,7 +215,7 @@ func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
 		default:
 		}
 
-		label := fmt.Sprintf("phase6/ctx=%d/nkvo=%d_ctk=%s", ctxVal, fb.NKVO, fb.CTK)
+		label := fmt.Sprintf("phase6/ctx=%d/nkvo=%d_ctk=%s_ctv=%s", ctxVal, fb.NKVO, fb.CTK, fb.CTV)
 		fbStatus, _, _ := RecordAndTrack(env, label, bench.RunParams{
 			NGL:        env.Best.NGL,
 			FA:         fb.FA,
@@ -198,8 +232,8 @@ func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
 			PhaseLabel: "ctx_sweep",
 		})
 		if fbStatus == bench.StatusOK {
-			env.Logger.Log("[Phase 6] ctx=%d succeeded with fallback nkvo=%d ctk=%s",
-				ctxVal, fb.NKVO, fb.CTK)
+			env.Logger.Log("[Phase 6] ctx=%d succeeded with fallback nkvo=%d ctk=%s ctv=%s",
+				ctxVal, fb.NKVO, fb.CTK, fb.CTV)
 			env.WS.CTX = appendIfMissing(env.WS.CTX, ctxVal)
 			env.Best.CTX = ctxVal
 			return "ok"
@@ -208,6 +242,17 @@ func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
 	}
 
 	return "fail"
+}
+
+// kvTypeAvailable reports whether the binary for the given KV type is available.
+func kvTypeAvailable(t string, turboAvail, rotorAvail bool) bool {
+	if strings.HasPrefix(t, "turbo") {
+		return turboAvail
+	}
+	if strings.HasPrefix(t, "planar") || strings.HasPrefix(t, "iso") {
+		return rotorAvail
+	}
+	return true
 }
 
 func applyCtxAxisOpts(env *PhaseEnv) []int {

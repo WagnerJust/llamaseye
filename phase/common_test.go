@@ -157,3 +157,23 @@ func TestBestFACTVForCTK(t *testing.T) {
 		t.Error("should not find turbo3")
 	}
 }
+
+func TestFindFACTKByKV(t *testing.T) {
+	ws := []state.FACTKCombo{
+		{FA: 0, CTK: "f16", CTV: "turbo3"},
+		{FA: 1, CTK: "f16", CTV: "turbo3"},
+		{FA: 1, CTK: "f16", CTV: "f16"},
+	}
+	fa, found := FindFACTKByKV(ws, "f16", "turbo3")
+	if !found {
+		t.Fatal("expected to find (f16, turbo3)")
+	}
+	if fa != 1 {
+		t.Errorf("fa = %d, want 1 (prefer fa=1)", fa)
+	}
+
+	_, found2 := FindFACTKByKV(ws, "q8_0", "turbo3")
+	if found2 {
+		t.Error("should not find (q8_0, turbo3)")
+	}
+}

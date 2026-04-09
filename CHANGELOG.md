@@ -6,6 +6,16 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.4.0] — 2026-04-09
+
+### Added
+- **V-first OOM fallback in Phase 6** — when the primary config OOMs at a context size, the fallback sequence now first tries more-compressed `ctv` types while keeping `ctk` fixed (exhaust V before touching K), then falls through to more-compressed `ctk+ctv` pairs. Aligns with TurboQuant research that V compression is effectively quality-free.
+- **RotorQuant binary dispatch** (`--rotor-bench <path>` / `SWEEP_ROTOR_BENCH_BIN`) — enables `planar3`, `planar4`, `iso3`, `iso4` KV cache types from the [johndpope/llama-cpp-turboquant](https://github.com/johndpope/llama-cpp-turboquant) fork (branch `feature/planarquant-kv-cache`). RotorQuant types slot into the quality ordering between `q4_0` and TurboQuant types.
+- **Unified KV quality ordering** — Phase 6 fallback now uses the full ordering: `f16 > q8_0 > q4_0 > iso4 > planar4 > turbo4 > iso3 > planar3 > turbo3 > turbo2`.
+- `FindFACTKByKV` helper in `phase/common.go` to look up the best FA value for an exact (ctk, ctv) pair.
+
+---
+
 ## [1.3.0] — 2026-04-08
 
 ### Fixed

@@ -4,8 +4,8 @@ description: >
   Use this skill whenever the user mentions llamaseye, running llama-bench sweeps,
   benchmarking models on the remote inference host, finding the fastest or best config for
   a model, testing GPU layer offload (ngl), context ceiling/frontier testing, KV
-  cache benchmarking, flash attention sweeps, TurboQuant KV types, thread count
-  tuning, batch/ubatch sizing, or any exhaustive parameter sweep of llama.cpp
+  cache benchmarking, flash attention sweeps, TurboQuant KV types, RotorQuant KV types,
+  thread count tuning, batch/ubatch sizing, or any exhaustive parameter sweep of llama.cpp
   models. Also triggers on "sweep a model", "benchmark Qwen/Llama/Mistral on the
   PC", "what's the best context size for X", "resume a sweep", "check model
   performance", or "run llama-bench with different settings". Be eager to apply
@@ -25,6 +25,7 @@ description: >
   and state files (`hardware.json`, `state.json`)
 - Can be resumed at any point, run on a single model or a whole directory, filtered by a model list
 - Optionally uses a **TurboQuant binary** to test `turbo2/turbo3/turbo4` KV cache types
+- Optionally uses a **RotorQuant binary** to test `planar3/planar4/iso3/iso4` KV cache types
 
 **Key paths on the remote inference host (SSH):**
 
@@ -34,6 +35,7 @@ description: >
 | Default output | `~/Models/bench/sweep/` |
 | llama-bench (standard) | `~/llama.cpp/build/bin/llama-bench` |
 | llama-bench (TurboQuant) | `~/llama-cpp-turboquant/build/bin/llama-bench` |
+| llama-bench (RotorQuant) | `~/llama-cpp-rotorquant/build/bin/llama-bench` |
 | llamaseye binary | `~/Src/llamaseye/llamaseye` (build with `go build -o llamaseye .`) |
 | llamaseye .env | `~/Src/llamaseye/.env` (local config, gitignored) |
 
@@ -66,6 +68,10 @@ cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf \
   --llama-bench ~/llama.cpp/build/bin/llama-bench \
   --turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench
 
+# With RotorQuant binary (enables planar3/planar4/iso3/iso4 KV types)
+cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf \
+  --rotor-bench ~/llama-cpp-rotorquant/build/bin/llama-bench
+
 # Resume an interrupted sweep
 cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf --resume
 
@@ -97,6 +103,7 @@ To load a config from a non-default path: `./llamaseye --env-file ~/custom.env <
 | Curated model subset | `--model-list ~/list.txt` |
 | Regenerate sweep.md without re-running | `--report --output-dir <dir>` |
 | TurboQuant KV types | `--turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench` |
+| RotorQuant KV types | `--rotor-bench ~/llama-cpp-rotorquant/build/bin/llama-bench` |
 | Start NGL sweep mid-range | `--start-ngl 40` |
 | NGL sweep downward from a known point | `--start-ngl 60 --ngl-dir down` |
 | Skip low context sizes | `--start-ctx 65536` |
@@ -210,6 +217,7 @@ cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/be
 |----------|-----------------|----------|
 | `LLAMA_BENCH_BIN` | Path to the standard llama-bench binary (**required — no default**) | `~/llama.cpp/build/bin/llama-bench` |
 | `SWEEP_TURBO_BENCH_BIN` | Path to TurboQuant binary (optional) | `~/llama-cpp-turboquant/build/bin/llama-bench` |
+| `SWEEP_ROTOR_BENCH_BIN` | Path to RotorQuant binary (optional) | `~/llama-cpp-rotorquant/build/bin/llama-bench` |
 | `SWEEP_MODELS_DIR` | Directory scanned for .gguf files | `~/Models` |
 | `SWEEP_OUTPUT_DIR` | Root directory for all sweep results (default: `./results`) | `~/Models/bench/sweep` |
 | `SWEEP_NGL_STEP` | Layer step size for NGL sweep | `4` (use `2` near VRAM edge) |

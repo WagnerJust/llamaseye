@@ -57,6 +57,8 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 		StandardBin:    s.Config.LlamaBenchBin,
 		TurboBin:       s.Config.TurboBenchBin,
 		TurboAvailable: s.Config.TurboBenchBin != "" && detectTurbo(s.Config.TurboBenchBin),
+		RotorBin:       s.Config.RotorBenchBin,
+		RotorAvailable: s.Config.RotorBenchBin != "" && detectTurbo(s.Config.RotorBenchBin),
 	}
 	runner := &bench.BenchRunner{
 		Config:    s.Config,

@@ -131,6 +131,20 @@ cmake --build build --config Release --target llama-bench -j$(nproc)
 
 llamaseye verifies the binary at startup by probing it with `-ctk turbo3`. If the flag is accepted, turbo types are enabled. If the path is missing or the flag is rejected, turbo types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — the script handles an invalid path gracefully.
 
+### Optional: RotorQuant llama-bench
+
+To enable `planar3`/`planar4`/`iso3`/`iso4` KV cache types (from the [RotorQuant](https://github.com/scrya-com/rotorquant) project), build from the [johndpope/llama-cpp-turboquant](https://github.com/johndpope/llama-cpp-turboquant) fork (branch `feature/planarquant-kv-cache`) and pass it via `--rotor-bench <path>`.
+
+```sh
+git clone https://github.com/johndpope/llama-cpp-turboquant \
+  --branch feature/planarquant-kv-cache --depth=1 llama-cpp-rotorquant
+cd llama-cpp-rotorquant
+cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --target llama-bench -j$(nproc)
+```
+
+RotorQuant types slot between `q4_0` and TurboQuant types in the quality ordering — they offer better PPL at equivalent compression (e.g. iso3 PPL 6.91 vs turbo3 PPL 7.07 on Llama 3.1 8B). They are included in the Phase 6 OOM fallback chain when `--rotor-bench` is provided.
+
 ### Optional system tools
 
 The Go binary uses native OS APIs for hardware detection and thermal monitoring. A few optional tools extend these capabilities:
@@ -157,6 +171,7 @@ If these are absent, llamaseye disables the corresponding thermal guard and logs
 | `--output-dir <dir>` | Root directory for all results (default: `./results`) |
 | `--llama-bench <path>` | Path to standard llama-bench binary |
 | `--turbo-bench <path>` | Path to TurboQuant llama-bench binary (enables turbo2/3/4 KV types) |
+| `--rotor-bench <path>` | Path to RotorQuant llama-bench binary (enables planar3/4, iso3/4 KV types) |
 | `--asymmetric-kv` / `--no-asymmetric-kv` | Include asymmetric K/V quant combos in Phase 2 when `--turbo-bench` is set (default: enabled) |
 | `--ngl-step <n>` | Step size for NGL axis sweep (default: 4) |
 | `--repetitions <n>` | Repetitions per benchmark run (default: 3) |
@@ -278,9 +293,10 @@ Phase 1 starts at `MAX_NGL − 2×step` by default, testing only the top ~3 NGL 
 
 When the primary config OOMs at a given context size, Phase 6 automatically tries progressively more memory-friendly alternatives before giving up:
 1. Flip nkvo (move KV cache from VRAM → RAM)
-2. More-compressed ctk types (q4_0, turbo types) × both nkvo values
+2. **V-first**: keep CTK fixed, try more-compressed CTV types — V compression is effectively free quality-wise, so this is exhausted before touching K
+3. **K+V**: try more-compressed CTK types (with their paired CTV from Phase 2) × both nkvo values
 
-Only ctk/nkvo values already validated by Phases 2 and 4 are tried.
+Only ctk/ctv/nkvo values already validated by Phases 2 and 4 are tried. The KV quality order for fallback selection (most to least quality): `f16 > q8_0 > q4_0 > iso4 > planar4 > turbo4 > iso3 > planar3 > turbo3 > turbo2`.
 
 ### Fine-grained context sweep
 
@@ -309,14 +325,16 @@ When `--min-*` flags are not set, Phase 7 auto-applies minimum filters so the co
 
 If `--start-ctx` is set and no context at or above that size succeeds in Phase 6, Phase 7 is skipped with a clear warning rather than silently running a useless matrix at a tiny fallback context.
 
-**KV quality order** (low → high): `turbo2 turbo3 turbo4 q4_0 q8_0 f16`
-- `--min-ctk turbo3` keeps turbo3, turbo4, q4_0, q8_0, f16 (excludes only turbo2)
+**KV quality order** (low → high): `turbo2 turbo3 planar3 iso3 turbo4 planar4 iso4 q4_0 q8_0 f16`
+- `--min-ctk turbo3` keeps turbo3 and everything higher quality (excludes only turbo2)
 - `--min-ctk q8_0` keeps q8_0 and f16 only (the default)
-- `--min-ctk q4_0` includes all types (effectively disables the ctk filter)
+- `--min-ctk q4_0` includes all types at or above q4_0 quality (effectively disables the ctk filter)
 
 ---
 
-## TurboQuant KV cache types
+## Specialised KV cache types
+
+### TurboQuant
 
 Passing `--turbo-bench <path>` enables three additional KV cache quantisation types: **turbo2**, **turbo3**, and **turbo4**, sourced from the [llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant) fork. These compress the KV cache 3–6× compared to f16, freeing VRAM for more layers or larger contexts without a significant quality penalty.
 
@@ -329,6 +347,20 @@ Passing `--turbo-bench <path>` enables three additional KV cache quantisation ty
 The TurboQuant binary is verified at startup by probing it with `-ctk turbo3`. If the flag is accepted, turbo types are enabled. If the path is missing or the flag is rejected, turbo types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — the script handles an invalid path gracefully.
 
 When `--turbo-bench` is available, Phase 2 also tests **asymmetric K/V combinations** (e.g. `ctk=q8_0, ctv=turbo3`) by default. TurboQuant research shows that V cache compression is effectively free — compressing V has near-zero effect on attention quality — while all quality degradation comes from K compression. Asymmetric combos capture the best of both: high K precision with aggressive V compression. Use `--no-asymmetric-kv` to restrict Phase 2 to symmetric pairs only.
+
+### RotorQuant
+
+Passing `--rotor-bench <path>` enables four additional KV cache types: **planar3**, **planar4**, **iso3**, **iso4**, sourced from the [johndpope/llama-cpp-turboquant](https://github.com/johndpope/llama-cpp-turboquant) fork (branch `feature/planarquant-kv-cache`).
+
+RotorQuant uses block-diagonal rotations (O(d), 128 params) rather than full-rank WHT (O(d log d), 16,384 params), which preserves directional structure better at equivalent compression. Benchmarks on Llama 3.1 8B (RTX 5090):
+
+| Type | Compression | PPL |
+|------|-------------|-----|
+| `iso3` | ~10.3× | 6.91 |
+| `planar3` | ~10.3× | 7.05 |
+| `turbo3` | ~10.3× | 7.07 |
+
+RotorQuant types slot between `q4_0` and TurboQuant in the quality ordering: `f16 > q8_0 > q4_0 > iso4 > planar4 > turbo4 > iso3 > planar3 > turbo3 > turbo2`.
 
 ---
 

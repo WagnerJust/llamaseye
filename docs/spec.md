@@ -152,23 +152,36 @@ If neither command is available, thermal guarding is disabled with a warning.
 
 ---
 
-## TurboQuant Binary Detection
+## Specialised Binary Detection
 
-The sweep optionally supports a second `llama-bench` binary built from the
-[llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant) fork
-(branch `feature/turboquant-kv-cache`). This fork adds `turbo2`, `turbo3`, and
-`turbo4` as additional KV cache types, compressing the KV cache to 2–4 bits
-on-the-fly without touching model weights. The primary benefit is dramatically
-extended context on VRAM-limited hardware (~4–6× longer context for ~5–8% t/s
-penalty).
+The sweep optionally supports two additional `llama-bench` binaries for
+specialised KV cache types. Both are verified at startup the same way as the
+standard binary (file exists + executable bit set). Either or both may be omitted.
 
-### Why a separate binary
+### TurboQuant
 
-The turbo KV types are not in upstream llama.cpp — they exist only on the fork
-branch. The binary is otherwise API-identical: every standard `llama-bench` flag
-still works exactly the same. When the turbo binary is provided, only runs that
-use a turbo KV type are dispatched to it; every other run uses the standard
-binary as normal.
+Built from the [llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant)
+fork (branch `feature/turboquant-kv-cache`). Adds `turbo2`, `turbo3`, `turbo4`
+KV cache types, compressing the KV cache to 2–4 bits on-the-fly without touching
+model weights.
+
+Enabled via `--turbo-bench <path>` / `SWEEP_TURBO_BENCH_BIN`.
+
+### RotorQuant
+
+Built from the [johndpope/llama-cpp-turboquant](https://github.com/johndpope/llama-cpp-turboquant)
+fork (branch `feature/planarquant-kv-cache`). Adds `planar3`, `planar4`, `iso3`,
+`iso4` KV cache types. These use block-diagonal rotations rather than full-rank
+WHT, yielding better PPL at equivalent compression than TurboQuant.
+
+Enabled via `--rotor-bench <path>` / `SWEEP_ROTOR_BENCH_BIN`.
+
+### Why separate binaries
+
+The specialised KV types are not in upstream llama.cpp. The binaries are
+otherwise API-identical: every standard `llama-bench` flag works the same. Only
+runs that use a specialised KV type are dispatched to the corresponding binary;
+every other run uses the standard binary.
 
 ### Verification at startup
 
@@ -245,8 +258,9 @@ accurate.
 function select_binary(ctk):
     if ctk in ["turbo2", "turbo3", "turbo4"]:
         return SWEEP_TURBO_BENCH_BIN
-    else:
-        return LLAMA_BENCH_BIN
+    if ctk in ["planar3", "planar4", "iso3", "iso4"]:
+        return SWEEP_ROTOR_BENCH_BIN
+    return LLAMA_BENCH_BIN
 ```
 
 The selected binary path is stored in every JSONL record under the `"binary"`
@@ -301,7 +315,7 @@ Every axis supports two optional override flags:
 | `ngl` | `0 → max_ngl` | `max_ngl → 0` | `up` |
 | `threads` | `1 → HW_CPU_LOGICAL` | `HW_CPU_LOGICAL → 1` | `up` |
 | `ctx` | `128 → 131072` | `131072 → 128` | `up` |
-| `ctk` | toward more compression: `f16→q8_0→q4_0→turbo4→turbo3→turbo2` | toward less compression | `up` |
+| `ctk` | toward more compression: `f16→q8_0→q4_0→iso4→planar4→turbo4→iso3→planar3→turbo3→turbo2` | toward less compression | `up` |
 | `b` (batch) | `512 → 2048` | `2048 → 512` | `up` |
 | `ub` (ubatch) | `128 → 512` | `512 → 128` | `up` |
 | `fa` | `0 → 1` (off → on) | `1 → 0` (on → off) | `up` |
@@ -345,9 +359,9 @@ This means you often **don't need `--min-*` flags at all** — just set your sta
 | `--min-b N` | batch sizes < N | numeric |
 | `--min-ub N` | ubatch sizes < N | numeric |
 
-**KV quality order** (low → high): `turbo2 → turbo3 → turbo4 → q4_0 → q8_0 → f16`
+**KV quality order** (low → high): `turbo2 → turbo3 → planar3 → iso3 → turbo4 → planar4 → iso4 → q4_0 → q8_0 → f16`
 
-`--min-ctk q8_0` keeps only `q8_0` and `f16` in Phase 7, dropping all turbo types and `q4_0`.
+`--min-ctk q8_0` keeps only `q8_0` and `f16` in Phase 7, dropping all turbo/rotor types and `q4_0`.
 
 Thread sweep values are generated dynamically from `HW_CPU_PHYSICAL` and
 `HW_CPU_LOGICAL` at runtime. For example, on an 8C/16T machine the list
@@ -657,10 +671,16 @@ Use `-n 0` (PP-only) and `-r 2` to keep runtime bounded on large contexts.
 
 - **OOM:** When the primary config runs out of memory, Phase 6 tries progressively
   more memory-friendly alternatives before giving up on that size:
-  1. Flip `nkvo` — move the KV cache from VRAM to RAM
-  2. More-compressed `ctk` types (`q4_0`, then turbo types if available) × both
-     `nkvo` values
-  Only `ctk` and `nkvo` values already validated by Phases 2 and 4 are tried.
+  1. Flip `nkvo` — move the KV cache from VRAM to RAM (keeps CTK/CTV unchanged)
+  2. **V-first**: keep `ctk` fixed, try more-compressed `ctv` types in quality
+     order (most quality first). V compression is effectively free quality-wise
+     — this is exhausted before any K compression is attempted.
+  3. **K+V**: try more-compressed `ctk` types (with their Phase-2-paired `ctv`)
+     × both `nkvo` values.
+  Only `ctk`/`ctv`/`nkvo` values already validated by Phases 2 and 4 are tried.
+  The fallback quality order (most to least quality):
+  `f16 > q8_0 > q4_0 > iso4 > planar4 > turbo4 > iso3 > planar3 > turbo3 > turbo2`
+  (rotor types require `--rotor-bench`; turbo types require `--turbo-bench`).
   If any fallback succeeds, the context size is recorded as successful and the
   sweep continues. If all fallbacks also OOM, the sweep stops.
 
