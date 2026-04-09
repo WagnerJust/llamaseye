@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/WagnerJust/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/output"
 	"github.com/WagnerJust/llamaseye/state"
 )
 
@@ -90,6 +91,7 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 	ctxCeil := make(map[string]int)
 
 	runCount := 0
+	skipCount := 0
 	goalHits := 0
 	goalDone := false
 	// goalTuples tracks best TG seen per (ngl,ctk,nkvo,ctx) key.
@@ -154,9 +156,9 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 									threads = &tc
 								}
 
-								p7Key := FocusedComboKey(7, ngl, fa, ctk, ctv, nkvo, threads, bub.B, bub.UB, ctxVal)
+								p7Key := output.ComboKey(7, ngl, fa, ctk, ctv, nkvo, threads, bub.B, bub.UB, ctxVal)
 								if _, skip := ShouldSkip(env, 7, p7Key); skip {
-									runCount++
+									skipCount++
 									continue
 								}
 
@@ -181,7 +183,11 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 
 								runCount++
 								if runCount%10 == 0 {
-									env.Logger.Log("[Phase 7] %d/%d combinations run", runCount, total)
+									if skipCount > 0 {
+										env.Logger.Log("[Phase 7] %d/%d combinations run (%d skipped via --focused)", runCount, total, skipCount)
+									} else {
+										env.Logger.Log("[Phase 7] %d/%d combinations run", runCount, total)
+									}
 								}
 
 								if status == bench.StatusOOM || status == bench.StatusTimeout {
@@ -236,10 +242,19 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 	}
 
 	if p.Goal != nil {
-		env.Logger.Log("[Phase 7] Complete — %d combinations run, %d/%d distinct goal configs found",
-			runCount, goalHits, p.Goal.MaxHits)
+		if skipCount > 0 {
+			env.Logger.Log("[Phase 7] Complete — %d combinations run, %d skipped via --focused, %d/%d distinct goal configs found",
+				runCount, skipCount, goalHits, p.Goal.MaxHits)
+		} else {
+			env.Logger.Log("[Phase 7] Complete — %d combinations run, %d/%d distinct goal configs found",
+				runCount, goalHits, p.Goal.MaxHits)
+		}
 	} else {
-		env.Logger.Log("[Phase 7] Complete — %d combinations run", runCount)
+		if skipCount > 0 {
+			env.Logger.Log("[Phase 7] Complete — %d combinations run, %d skipped via --focused", runCount, skipCount)
+		} else {
+			env.Logger.Log("[Phase 7] Complete — %d combinations run", runCount)
+		}
 	}
 	return nil
 }

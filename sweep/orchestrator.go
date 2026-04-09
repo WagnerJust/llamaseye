@@ -3,6 +3,7 @@ package sweep
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -124,7 +125,7 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 	// --focused: load existing combos from sweep.jsonl for dedup
 	if s.Config.Focused {
 		combos, err := output.LoadExistingCombos(outputDir)
-		if err != nil && !os.IsNotExist(err) {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("--focused: load sweep.jsonl: %w", err)
 		}
 		env.SkipCombos = combos

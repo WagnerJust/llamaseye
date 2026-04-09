@@ -2,7 +2,6 @@ package phase
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/WagnerJust/llamaseye/bench"
 	"github.com/WagnerJust/llamaseye/output"
@@ -208,36 +207,6 @@ func ShouldSkip(env *PhaseEnv, phaseID int, comboKey string) (output.ExistingCom
 		}
 	}
 	return output.ExistingCombo{}, false
-}
-
-// FocusedComboKey builds the combo key string for --focused dedup.
-// Thread value is encoded as "sys" for system default, or the integer value.
-func FocusedComboKey(phaseID int, ngl, fa int, ctk, ctv string, nkvo int, threads *int, b, ub, ctx int) string {
-	switch phaseID {
-	case 0, 1:
-		return fmt.Sprintf("%d", ngl)
-	case 2:
-		return fmt.Sprintf("%d_%s_%s", fa, ctk, ctv)
-	case 3:
-		if threads == nil {
-			return "sys"
-		}
-		return fmt.Sprintf("%d", *threads)
-	case 4:
-		return fmt.Sprintf("%d", nkvo)
-	case 5:
-		return fmt.Sprintf("%d_%d", b, ub)
-	case 6:
-		return fmt.Sprintf("%d", ctx)
-	case 7:
-		thr := "sys"
-		if threads != nil {
-			thr = fmt.Sprintf("%d", *threads)
-		}
-		return fmt.Sprintf("%d_%d_%s_%s_%d_%s_%d_%d_%d", ngl, fa, ctk, ctv, nkvo, thr, b, ub, ctx)
-	default:
-		return ""
-	}
 }
 
 // RecordAndTrack runs a bench and writes the JSONL record.

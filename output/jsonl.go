@@ -227,31 +227,41 @@ func LoadExistingCombos(outputDir string) (map[int]map[string]ExistingCombo, err
 	return result, scanner.Err()
 }
 
-// comboKey builds the dedup key for a given phase from JSONL params.
-func comboKey(phase int, p jsonlParamsJSON) string {
+// ComboKey builds the canonical dedup key for --focused mode.
+// Thread value is encoded as "sys" for system default (nil), or the integer value.
+func ComboKey(phase int, ngl, fa int, ctk, ctv string, nkvo int, threads *int, b, ub, ctx int) string {
 	switch phase {
 	case 0, 1:
-		return fmt.Sprintf("%d", p.NGL)
+		return fmt.Sprintf("%d", ngl)
 	case 2:
-		return fmt.Sprintf("%d_%s_%s", p.FA, p.CTK, p.CTV)
+		return fmt.Sprintf("%d_%s_%s", fa, ctk, ctv)
 	case 3:
-		if p.ThreadsIsDefault || p.Threads == nil {
+		if threads == nil {
 			return "sys"
 		}
-		return fmt.Sprintf("%d", *p.Threads)
+		return fmt.Sprintf("%d", *threads)
 	case 4:
-		return fmt.Sprintf("%d", p.NKVO)
+		return fmt.Sprintf("%d", nkvo)
 	case 5:
-		return fmt.Sprintf("%d_%d", p.B, p.UB)
+		return fmt.Sprintf("%d_%d", b, ub)
 	case 6:
-		return fmt.Sprintf("%d", p.NPrompt)
+		return fmt.Sprintf("%d", ctx)
 	case 7:
 		thr := "sys"
-		if !p.ThreadsIsDefault && p.Threads != nil {
-			thr = fmt.Sprintf("%d", *p.Threads)
+		if threads != nil {
+			thr = fmt.Sprintf("%d", *threads)
 		}
-		return fmt.Sprintf("%d_%d_%s_%s_%d_%s_%d_%d_%d", p.NGL, p.FA, p.CTK, p.CTV, p.NKVO, thr, p.B, p.UB, p.NPrompt)
+		return fmt.Sprintf("%d_%d_%s_%s_%d_%s_%d_%d_%d", ngl, fa, ctk, ctv, nkvo, thr, b, ub, ctx)
 	default:
 		return ""
 	}
+}
+
+// comboKey unpacks JSONL params and delegates to ComboKey.
+func comboKey(phase int, p jsonlParamsJSON) string {
+	var threads *int
+	if !p.ThreadsIsDefault && p.Threads != nil {
+		threads = p.Threads
+	}
+	return ComboKey(phase, p.NGL, p.FA, p.CTK, p.CTV, p.NKVO, threads, p.B, p.UB, p.NPrompt)
 }
