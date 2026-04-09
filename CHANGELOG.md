@@ -6,6 +6,23 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.5.0] — 2026-04-09
+
+### Added
+- **Independent CTK/CTV working sets** — Phase 2 now populates `WS.CTKValues` and `WS.CTVValues` as independent axes alongside the existing paired `WS.FACTK`. Phase 7 uses the cartesian product `CTK × CTV` instead of replaying only the exact pairs tested in Phase 2.
+- **Precision filter in Phase 7** — `(ctk, ctv)` combos where V is more precise than K are skipped as wasteful. Filter rule: `CTK_quality >= CTV_quality`. Quality ordering: `f16 > q8_0 > q4_0 > iso4 > planar4 > turbo4 > iso3 > planar3 > turbo3 > turbo2`.
+- **RotorQuant combos in Phase 2** — `iso3`/`iso4`/`planar3`/`planar4` symmetric and asymmetric combos added when `--rotor-bench` is available.
+- **State migration for `--resume`** — old `state.json` files without `ctk_values`/`ctv_values` are automatically migrated by deriving them from `fa_ctk_combos`.
+- `KVPrecisionValid`, `BestFAForCTK`, `UniqueCTKValues`, `UniqueCTVValues` helpers in `phase/common.go`.
+- Updated `CTKQualityOrder` in `phase/common.go` to include rotor types; Phase 6 fallback now uses this shared ordering.
+
+### Changed
+- Phase 7 log line updated: `fa_ctk×N` → `kv_pairs×N` (reflecting the new CTK × CTV cartesian count).
+- Phase 7 goal tuple key now includes CTV: `(ngl, ctk, ctv, nkvo, ctx)`.
+- State schema: `working_sets` gains `"ctk_values"` and `"ctv_values"` string arrays (backward-compatible — old files without these fields are migrated).
+
+---
+
 ## [1.4.0] — 2026-04-09
 
 ### Added

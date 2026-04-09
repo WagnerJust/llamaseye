@@ -311,6 +311,12 @@ bash llamaseye.sh --model my.gguf --fine-ctx
 
 Each bisection probe runs the full primary + fallback sequence, so `--fine-ctx` is off by default — it adds real runtime cost at large context sizes.
 
+### Phase 7 — Independent K/V cartesian product
+
+Phase 7 now generates the cartesian product of independent `CTK × CTV` axes rather than replaying only the exact pairs tested in Phase 2. This expands the search space to include combos like `(ctk=f16, ctv=turbo3)` even if that exact pair wasn't in Phase 2.
+
+**Precision filter:** combos where V is more precise than K are automatically skipped as wasteful (e.g. `ctk=turbo3, ctv=f16` is dropped). The filter rule: CTK quality ≥ CTV quality.
+
 ### Phase 7 — Auto-derived minimum filters
 
 When `--min-*` flags are not set, Phase 7 auto-applies minimum filters so the combination matrix stays focused on high-value configs:

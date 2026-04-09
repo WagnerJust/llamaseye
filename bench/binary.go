@@ -14,18 +14,22 @@ type BinarySelector struct {
 	RotorAvailable bool
 }
 
-// Select returns the binary path for the given ctk type.
+// Select returns the binary path for the given ctk and ctv types.
+// If either type requires a specialised binary, that binary is used.
 // Returns an error if a specialised type is requested but its binary is unavailable.
-func (s *BinarySelector) Select(ctk string) (path string, label string, err error) {
-	if strings.HasPrefix(ctk, "turbo") {
+func (s *BinarySelector) Select(ctk, ctv string) (path string, label string, err error) {
+	isTurbo := func(t string) bool { return strings.HasPrefix(t, "turbo") }
+	isRotor := func(t string) bool { return strings.HasPrefix(t, "planar") || strings.HasPrefix(t, "iso") }
+
+	if isTurbo(ctk) || isTurbo(ctv) {
 		if !s.TurboAvailable {
-			return "", "", fmt.Errorf("turbo KV type %q requested but turbo-bench not available", ctk)
+			return "", "", fmt.Errorf("turbo KV type requested (ctk=%s ctv=%s) but turbo-bench not available", ctk, ctv)
 		}
 		return s.TurboBin, "turboquant", nil
 	}
-	if strings.HasPrefix(ctk, "planar") || strings.HasPrefix(ctk, "iso") {
+	if isRotor(ctk) || isRotor(ctv) {
 		if !s.RotorAvailable {
-			return "", "", fmt.Errorf("rotor KV type %q requested but rotor-bench not available", ctk)
+			return "", "", fmt.Errorf("rotor KV type requested (ctk=%s ctv=%s) but rotor-bench not available", ctk, ctv)
 		}
 		return s.RotorBin, "rotorquant", nil
 	}

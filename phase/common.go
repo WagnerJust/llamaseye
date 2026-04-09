@@ -8,11 +8,12 @@ import (
 	"github.com/WagnerJust/llamaseye/state"
 )
 
-// CTKQualityOrder defines KV type ordering from least to most compressed.
-// Quality order: turbo2 < turbo3 < turbo4 < q4_0 < q8_0 < f16
-var CTKQualityOrder = []string{"turbo2", "turbo3", "turbo4", "q4_0", "q8_0", "f16"}
+// CTKQualityOrder defines KV type ordering from lowest to highest quality
+// (most compressed to least compressed).
+// Quality order (ascending): turbo2 < turbo3 < planar3 < iso3 < turbo4 < planar4 < iso4 < q4_0 < q8_0 < f16
+var CTKQualityOrder = []string{"turbo2", "turbo3", "planar3", "iso3", "turbo4", "planar4", "iso4", "q4_0", "q8_0", "f16"}
 
-// CTKQualityIndex returns the index of ctk in CTKQualityOrder, or -1 if not found.
+// CTKQualityIndex returns the index of ctk in CTKQualityOrder (higher = higher quality), or -1 if not found.
 func CTKQualityIndex(ctk string) int {
 	for i, v := range CTKQualityOrder {
 		if v == ctk {
@@ -20,6 +21,59 @@ func CTKQualityIndex(ctk string) int {
 		}
 	}
 	return -1
+}
+
+// KVPrecisionValid reports whether ctk is at least as precise (high quality) as ctv.
+// This filters out wasteful combinations where V is more precise than K.
+func KVPrecisionValid(ctk, ctv string) bool {
+	ki := CTKQualityIndex(ctk)
+	vi := CTKQualityIndex(ctv)
+	if ki == -1 || vi == -1 {
+		return true // unknown types: allow them
+	}
+	return ki >= vi
+}
+
+// BestFAForCTK returns the best FA value (fa=1 preferred) for a given ctk from WS.FACTK.
+func BestFAForCTK(ws []state.FACTKCombo, ctk string) int {
+	fa := 0
+	for _, combo := range ws {
+		if combo.CTK == ctk {
+			if combo.FA == 1 {
+				return 1
+			}
+			fa = combo.FA
+		}
+	}
+	return fa
+}
+
+// UniqueCTKValues extracts unique CTK values from a FACTK working set,
+// preserving first-seen order.
+func UniqueCTKValues(ws []state.FACTKCombo) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, c := range ws {
+		if !seen[c.CTK] {
+			seen[c.CTK] = true
+			result = append(result, c.CTK)
+		}
+	}
+	return result
+}
+
+// UniqueCTVValues extracts unique CTV values from a FACTK working set,
+// preserving first-seen order.
+func UniqueCTVValues(ws []state.FACTKCombo) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, c := range ws {
+		if !seen[c.CTV] {
+			seen[c.CTV] = true
+			result = append(result, c.CTV)
+		}
+	}
+	return result
 }
 
 // ApplyAxisOpts slices fullList starting at startValue in the given direction.
@@ -177,7 +231,7 @@ func RecordAndTrack(env *PhaseEnv, label string, p bench.RunParams) (bench.Statu
 
 	binaryLabel := "standard"
 	if p.CTK != "" {
-		_, bl, _ := env.Runner.Selector.Select(p.CTK)
+		_, bl, _ := env.Runner.Selector.Select(p.CTK, p.CTV)
 		binaryLabel = bl
 	}
 

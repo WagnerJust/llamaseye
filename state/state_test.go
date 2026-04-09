@@ -155,6 +155,55 @@ func TestLoad_BashCompatible(t *testing.T) {
 	}
 }
 
+func TestRoundTrip_CTKCTVValues(t *testing.T) {
+	dir := t.TempDir()
+	orig := &State{
+		ModelPath:      "/models/foo.gguf",
+		ModelStem:      "foo",
+		MaxNGL:         32,
+		PhasesComplete: []int{0, 1, 2},
+		Best:           DefaultBest(),
+		WorkingSets: WorkingSets{
+			NGL:       []int{28, 32},
+			CTKValues: []string{"f16", "q8_0"},
+			CTVValues: []string{"f16", "q8_0", "turbo3"},
+			FACTKCombos: []FACTKCombo{
+				{FA: 1, CTK: "f16", CTV: "f16"},
+				{FA: 1, CTK: "q8_0", CTV: "q8_0"},
+				{FA: 1, CTK: "f16", CTV: "turbo3"},
+			},
+		},
+	}
+
+	if err := Save(dir, orig); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	wantCTK := []string{"f16", "q8_0"}
+	if len(loaded.WorkingSets.CTKValues) != len(wantCTK) {
+		t.Errorf("CTKValues = %v, want %v", loaded.WorkingSets.CTKValues, wantCTK)
+	} else {
+		for i, v := range wantCTK {
+			if loaded.WorkingSets.CTKValues[i] != v {
+				t.Errorf("CTKValues[%d] = %q, want %q", i, loaded.WorkingSets.CTKValues[i], v)
+			}
+		}
+	}
+	wantCTV := []string{"f16", "q8_0", "turbo3"}
+	if len(loaded.WorkingSets.CTVValues) != len(wantCTV) {
+		t.Errorf("CTVValues = %v, want %v", loaded.WorkingSets.CTVValues, wantCTV)
+	} else {
+		for i, v := range wantCTV {
+			if loaded.WorkingSets.CTVValues[i] != v {
+				t.Errorf("CTVValues[%d] = %q, want %q", i, loaded.WorkingSets.CTVValues[i], v)
+			}
+		}
+	}
+}
+
 func TestDefaultBest(t *testing.T) {
 	b := DefaultBest()
 	if b.NGL != 99 {
