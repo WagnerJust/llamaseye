@@ -67,6 +67,8 @@ To load a file at a different path use `--env-file`:
 
 Every CLI flag has a corresponding environment variable — env vars set the default value, and CLI flags override them when both are provided. `example.env` in the repo root documents every available variable with its default value and a description. The most important ones to set are `LLAMA_BENCH_BIN` (path to your llama-bench binary) and `SWEEP_OUTPUT_DIR` (where results are written).
 
+`$VAR` and `${VAR}` references in unquoted and double-quoted `.env` values are expanded against the process environment, so paths like `SWEEP_OUTPUT_DIR=${HOME}/Models/bench/sweep` work as expected. Single-quoted values are kept literal.
+
 `.env` is gitignored — your local paths and configuration will not be committed.
 
 ---
@@ -155,6 +157,7 @@ If these are absent, llamaseye disables the corresponding thermal guard and logs
 | `--output-dir <dir>` | Root directory for all results (default: `./results`) |
 | `--llama-bench <path>` | Path to standard llama-bench binary |
 | `--turbo-bench <path>` | Path to TurboQuant llama-bench binary (enables turbo2/3/4 KV types) |
+| `--asymmetric-kv` / `--no-asymmetric-kv` | Include asymmetric K/V quant combos in Phase 2 when `--turbo-bench` is set (default: enabled) |
 | `--ngl-step <n>` | Step size for NGL axis sweep (default: 4) |
 | `--repetitions <n>` | Repetitions per benchmark run (default: 3) |
 | `--timeout <s>` | Per-run timeout in seconds (default: 600) |
@@ -324,6 +327,8 @@ Passing `--turbo-bench <path>` enables three additional KV cache quantisation ty
 | `turbo4` | ~3.2× | Yes (auto-enabled) |
 
 The TurboQuant binary is verified at startup by probing it with `-ctk turbo3`. If the flag is accepted, turbo types are enabled. If the path is missing or the flag is rejected, turbo types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — the script handles an invalid path gracefully.
+
+When `--turbo-bench` is available, Phase 2 also tests **asymmetric K/V combinations** (e.g. `ctk=q8_0, ctv=turbo3`) by default. TurboQuant research shows that V cache compression is effectively free — compressing V has near-zero effect on attention quality — while all quality degradation comes from K compression. Asymmetric combos capture the best of both: high K precision with aggressive V compression. Use `--no-asymmetric-kv` to restrict Phase 2 to symmetric pairs only.
 
 ---
 

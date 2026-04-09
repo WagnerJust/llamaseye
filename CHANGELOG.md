@@ -6,6 +6,17 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.3.0] — 2026-04-08
+
+### Fixed
+- `.env` values containing `$VAR` or `${VAR}` references are now expanded against the process environment (`envfile/envfile.go`). Single-quoted values remain literal, matching standard shell behaviour. Previously, paths like `SWEEP_OUTPUT_DIR=${HOME}/Models/bench/sweep` were stored literally, causing a `${HOME}` directory to be created in the working directory.
+
+### Added
+- **Asymmetric K/V quant combos in Phase 2** — when `--turbo-bench` is available, Phase 2 now tests five asymmetric `(ctk, ctv)` pairs (e.g. `ctk=q8_0, ctv=turbo3`) in addition to the existing symmetric combos. TurboQuant research shows V cache compression is effectively free; these combos capture high K precision with aggressive V compression.
+- `--asymmetric-kv` / `--no-asymmetric-kv` flag (`SWEEP_ASYMMETRIC_KV`, default: `true`) to opt out of asymmetric combos when needed.
+
+---
+
 ## [1.2.0] — 2026-04-05
 
 ### Changed

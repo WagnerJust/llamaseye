@@ -235,6 +235,7 @@ cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/be
 | `SWEEP_ONLY_PHASES` | `--only-phases` | *(unset)* | Run only these phases, comma-separated |
 | `SWEEP_RESUME` | `--resume` | `false` | Skip already-completed phases |
 | `SWEEP_NO_CONFIRM` | `--no-confirm` | `false` | Skip pre-sweep confirmation |
+| `SWEEP_ASYMMETRIC_KV` | `--asymmetric-kv` | `true` | Include asymmetric K/V combos in Phase 2 (requires turbo binary) |
 | `SWEEP_DEBUG` | `--debug` | `false` | Enable verbose `[DEBUG]` log output |
 | `SWEEP_GOAL_HITS` | `--goal-hits` | `3` | Distinct (ngl,ctk,nkvo,ctx) configs before goal early-exit |
 | `SWEEP_GOAL_SORT` | `--goal-sort` | `tg` | Goal Results sort axis: `tg`, `ctx`, `ngl`, `pp` |
@@ -378,7 +379,7 @@ ssh justin@justin-powerhouse "cd ~/Src/llamaseye && cp example.env .env"
 |-------|------|----------------|--------------|
 | 0 | NGL probe | Finds `max_ngl` — starts probe at model's layer count (from GGUF), falls back to 99 | Never; required |
 | 1 | NGL axis | GPU layer count 0 → `min(max_ngl, num_layers)` — capped at actual layer count (higher values are identical) | Only if offload situation already known |
-| 2 | FA + KV quant | FA on/off × KV types (f16, q8_0, q4_0, turbo2–turbo4) | If KV choice already settled |
+| 2 | FA + KV quant | FA on/off × KV types (f16, q8_0, q4_0, turbo2–turbo4) + asymmetric K/V combos when `--turbo-bench` is set | If KV choice already settled |
 | 3 | Thread count | CPU threads 1 → HW_CPU_LOGICAL | If no CPU offload layers |
 | 4 | KV offload (nkvo) | KV cache in VRAM vs RAM | If nkvo behaviour already known |
 | 5 | Batch/ubatch | Batch and micro-batch size combos | If throughput tuning not needed |

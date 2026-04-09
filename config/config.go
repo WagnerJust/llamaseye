@@ -85,6 +85,9 @@ type Config struct {
 	// Optimized sweep
 	OptimizedSweep bool
 
+	// Asymmetric K/V quant combos in Phase 2
+	AsymmetricKV bool
+
 	// Debug mode
 	Debug bool
 }
@@ -170,6 +173,7 @@ func Defaults() *Config {
 		FineCtx:         envBool("SWEEP_FINE_CTX", false),
 		CtxStepMin:      envInt("SWEEP_CTX_STEP_MIN", 8192),
 		OptimizedSweep:  envBool("SWEEP_OPTIMIZED_SWEEP", false),
+		AsymmetricKV:   envBool("SWEEP_ASYMMETRIC_KV", true),
 		Debug:           envBool("SWEEP_DEBUG", false),
 	}
 }

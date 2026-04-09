@@ -94,6 +94,39 @@ func TestLoad_QuotedValues(t *testing.T) {
 	}
 }
 
+func TestLoad_VarExpansion(t *testing.T) {
+	os.Setenv("LLAMASEYE_EXPAND_SRC", "expanded")
+	t.Cleanup(func() {
+		os.Unsetenv("LLAMASEYE_EXPAND_SRC")
+		os.Unsetenv("LLAMASEYE_EXPAND_BRACE")
+		os.Unsetenv("LLAMASEYE_EXPAND_BARE")
+		os.Unsetenv("LLAMASEYE_EXPAND_DQ")
+		os.Unsetenv("LLAMASEYE_EXPAND_SQ")
+	})
+
+	path := writeEnv(t, `LLAMASEYE_EXPAND_BRACE=${LLAMASEYE_EXPAND_SRC}/suffix`+"\n"+
+		`LLAMASEYE_EXPAND_BARE=$LLAMASEYE_EXPAND_SRC/suffix`+"\n"+
+		`LLAMASEYE_EXPAND_DQ="${LLAMASEYE_EXPAND_SRC}/suffix"`+"\n"+
+		`LLAMASEYE_EXPAND_SQ='${LLAMASEYE_EXPAND_SRC}/suffix'`+"\n",
+	)
+	if err := Load(path); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if v := os.Getenv("LLAMASEYE_EXPAND_BRACE"); v != "expanded/suffix" {
+		t.Errorf("BRACE = %q, want expanded/suffix", v)
+	}
+	if v := os.Getenv("LLAMASEYE_EXPAND_BARE"); v != "expanded/suffix" {
+		t.Errorf("BARE = %q, want expanded/suffix", v)
+	}
+	if v := os.Getenv("LLAMASEYE_EXPAND_DQ"); v != "expanded/suffix" {
+		t.Errorf("DQ = %q, want expanded/suffix", v)
+	}
+	// Single-quoted: must remain literal, no expansion
+	if v := os.Getenv("LLAMASEYE_EXPAND_SQ"); v != "${LLAMASEYE_EXPAND_SRC}/suffix" {
+		t.Errorf("SQ = %q, want literal ${LLAMASEYE_EXPAND_SRC}/suffix", v)
+	}
+}
+
 func TestLoad_MissingFile(t *testing.T) {
 	err := Load("/nonexistent/path/.env")
 	if err == nil {
