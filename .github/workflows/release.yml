@@ -31,8 +31,22 @@ jobs:
           GOOS=darwin GOARCH=amd64  go build -ldflags="${LDFLAGS}" -o dist/llamaseye-darwin-amd64  .
           GOOS=darwin GOARCH=arm64  go build -ldflags="${LDFLAGS}" -o dist/llamaseye-darwin-arm64  .
 
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          python3 - <<'EOF'
+          import re, os
+          with open('CHANGELOG.md') as f:
+              content = f.read()
+          blocks = re.split(r'(?=^## \[)', content, flags=re.MULTILINE)
+          latest = next(b for b in blocks if b.startswith('## ['))
+          body = latest.split('\n', 1)[1].strip().rstrip('-').strip()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f'notes<<ENDOFNOTES\n{body}\nENDOFNOTES\n')
+          EOF
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
+          body: ${{ steps.notes.outputs.notes }}
