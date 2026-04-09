@@ -37,6 +37,17 @@ func (P2FAKVSweep) Run(ctx context.Context, env *PhaseEnv) error {
 			faCombo{0, "turbo2", "turbo2"},
 			faCombo{1, "turbo2", "turbo2"},
 		)
+		// Asymmetric K/V combos: V compression is effectively free; only K affects quality.
+		// These are omitted when --no-asymmetric-kv is set.
+		if env.Config.AsymmetricKV {
+			combos = append(combos,
+				faCombo{1, "q8_0", "turbo4"},  // High K precision, meaningful V compression
+				faCombo{1, "q8_0", "turbo3"},  // High K precision, max V compression
+				faCombo{1, "q8_0", "turbo2"},  // High K precision, extreme V compression
+				faCombo{1, "f16", "turbo3"},   // Full K precision, strong V compression
+				faCombo{1, "turbo4", "turbo2"}, // Moderate K, aggressive V
+			)
+		}
 	}
 
 	// Apply FA direction filter
@@ -82,7 +93,7 @@ func (P2FAKVSweep) Run(ctx context.Context, env *PhaseEnv) error {
 			continue
 		}
 
-		label := fmt.Sprintf("phase2/fa=%d_ctk=%s", combo.FA, combo.CTK)
+		label := fmt.Sprintf("phase2/fa=%d_ctk=%s_ctv=%s", combo.FA, combo.CTK, combo.CTV)
 		status, tg, _ := RecordAndTrack(env, label, bench.RunParams{
 			NGL:        env.Best.NGL,
 			FA:         combo.FA,

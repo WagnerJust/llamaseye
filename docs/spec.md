@@ -497,6 +497,11 @@ ngl=max_ngl, nkvo=0, threads=system-default, b=2048, ub=512
 | `fa0_turbo3` | `0` | `turbo3` | `turbo3` | ❌ Skip — FA auto-enabled internally |
 | `fa0_turbo2` | `0` | `turbo2` | `turbo2` | ⚙️ Turbo binary required |
 | `fa1_turbo2` | `1` | `turbo2` | `turbo2` | ⚙️ Turbo binary required |
+| `fa1_q8k_turbo4v` | `1` | `q8_0` | `turbo4` | ⚙️ Turbo binary + `--asymmetric-kv` |
+| `fa1_q8k_turbo3v` | `1` | `q8_0` | `turbo3` | ⚙️ Turbo binary + `--asymmetric-kv` |
+| `fa1_q8k_turbo2v` | `1` | `q8_0` | `turbo2` | ⚙️ Turbo binary + `--asymmetric-kv` |
+| `fa1_f16k_turbo3v` | `1` | `f16` | `turbo3` | ⚙️ Turbo binary + `--asymmetric-kv` |
+| `fa1_turbo4k_turbo2v` | `1` | `turbo4` | `turbo2` | ⚙️ Turbo binary + `--asymmetric-kv` |
 
 Turbo rows (⚙️) are only included when `TURBO_AVAILABLE=true`. For turbo3 and
 turbo4, `turbo-llama-bench` auto-enables flash attention internally even when
@@ -505,6 +510,13 @@ would show `fa=0` but FA was actually active). Only `fa=1` is run for those
 types. For turbo2, FA is not required and the binary respects the `-fa` flag, so
 both `fa=0` and `fa=1` are tested. Treat any crash or OOM as a skipped config
 and continue.
+
+**Asymmetric K/V combos** (last five rows) are tested when `TURBO_AVAILABLE=true`
+and `SWEEP_ASYMMETRIC_KV=true` (the default). TurboQuant research establishes that
+V cache compression has near-zero effect on attention quality — all quality
+degradation comes from K compression. These combos capture high K precision with
+aggressive V compression. Set `--no-asymmetric-kv` or `SWEEP_ASYMMETRIC_KV=false`
+to restrict Phase 2 to symmetric pairs only.
 
 Run standard rows first (in the order listed), then turbo rows. If all `fa=1`
 configs OOM or crash (common with some MoE architectures), log a warning but

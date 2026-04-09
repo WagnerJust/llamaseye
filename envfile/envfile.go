@@ -38,10 +38,16 @@ func Load(path string) error {
 		}
 		key := strings.TrimSpace(line[:idx])
 		val := strings.TrimSpace(line[idx+1:])
-		// Strip optional surrounding quotes
+		// Strip optional surrounding quotes.
+		// Single-quoted values are kept literal (no variable expansion).
+		// Unquoted and double-quoted values have $VAR / ${VAR} references expanded.
+		singleQuoted := len(val) >= 2 && val[0] == '\'' && val[len(val)-1] == '\''
 		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') ||
 			(val[0] == '\'' && val[len(val)-1] == '\'')) {
 			val = val[1 : len(val)-1]
+		}
+		if !singleQuoted {
+			val = os.ExpandEnv(val)
 		}
 		// Process env wins: only set if not already present
 		if _, exists := os.LookupEnv(key); !exists {
