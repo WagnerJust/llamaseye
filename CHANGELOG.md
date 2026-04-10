@@ -8,10 +8,6 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.7.2] — 2026-04-09
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 ### Added
 - CI pipeline (`ci.yml`): runs `go vet` and `go test -race` on every push/PR, plus `golangci-lint` for static analysis.
 - Release workflow now runs `go test` before building binaries.
@@ -39,6 +35,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - `detectTurbo` renamed to `validateBenchBinary` — now actually runs `<binary> --help` and checks for the expected marker string (`turbo3` for TurboQuant, `planar3` for RotorQuant) instead of only checking that the file exists with the execute bit. A standard llama-bench at the wrong path will no longer be silently accepted.
 - Eliminated double `os.Stat` call (TOCTOU race) in binary validation.
 - `SweepModel` no longer mutates `s.Logger` — per-model logger is now a local variable, preventing shared state corruption across sequential model sweeps and eliminating a potential data race if models were ever swept concurrently.
+- `state.Load` now uses `errors.Is(err, os.ErrNotExist)` instead of deprecated `os.IsNotExist`.
+- Goal spec parsing deduplicated — `config.ParseGoalSpec` is the single source of truth, replacing duplicate logic in `sweep/orchestrator.go` and `output/markdown.go`.
+- Inline anonymous `Logger` interface in `bench/runner.go` replaced with named `DebugLogger` interface for discoverability.
 
 ### Changed
 - `sweep.jsonl` file handle is now opened once per model sweep and reused for all records, instead of opening and closing the file for every benchmark run. Reduces syscall overhead from O(n) opens to O(1) during Phase 7's combination matrix.

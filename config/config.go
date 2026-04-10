@@ -286,3 +286,31 @@ func (c *Config) Validate() error {
 	}
 	return nil
 }
+
+// GoalSpec holds the parsed fields from a goal spec string like "ctx=32768,tg=5".
+type GoalSpec struct {
+	CtxMin int
+	TGMin  float64
+	PPMin  float64
+}
+
+// ParseGoalSpec parses a goal specification string (e.g. "ctx=32768,tg=5,pp=100").
+func ParseGoalSpec(spec string) GoalSpec {
+	var g GoalSpec
+	for _, part := range strings.Split(spec, ",") {
+		part = strings.TrimSpace(part)
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		switch kv[0] {
+		case "ctx":
+			fmt.Sscanf(kv[1], "%d", &g.CtxMin)
+		case "tg":
+			fmt.Sscanf(kv[1], "%f", &g.TGMin)
+		case "pp":
+			fmt.Sscanf(kv[1], "%f", &g.PPMin)
+		}
+	}
+	return g
+}
