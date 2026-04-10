@@ -174,7 +174,24 @@ func (r *BenchRunner) RunBench(ctx context.Context, label string, p RunParams) (
 		}, nil
 	}
 
-	_ = parseErr
+	// Empty results with zero exit = parse failure (malformed output)
+	if parseErr != nil || (len(results) == 0 && exitCode == 0) {
+		errMsg := "no results parsed from llama-bench output"
+		if parseErr != nil {
+			errMsg = parseErr.Error()
+		}
+		if r.Logger != nil {
+			r.Logger.Debugf("parse issue: %s", errMsg)
+		}
+		if len(results) == 0 {
+			return &RunResult{
+				RunID:        runID,
+				Status:       StatusError,
+				WallTimeSec:  wallTime,
+				ErrorSnippet: errMsg,
+			}, nil
+		}
+	}
 
 	return &RunResult{
 		RunID:         runID,

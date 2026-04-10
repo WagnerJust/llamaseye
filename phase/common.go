@@ -253,8 +253,10 @@ func RecordAndTrack(ctx context.Context, env *PhaseEnv, label string, p bench.Ru
 		binaryLabel = bl
 	}
 
-	_ = output.AppendRecord(env.OutputDir, env.ModelPath, env.ModelStem,
-		jp, res, p.Phase, p.PhaseLabel, binaryLabel)
+	if err := output.AppendRecord(env.OutputDir, env.ModelPath, env.ModelStem,
+		jp, res, p.Phase, p.PhaseLabel, binaryLabel); err != nil {
+		env.Logger.Warn("AppendRecord failed: %v", err)
+	}
 
 	return res.Status, bench.TGSpeed(res.Results), bench.PPSpeed(res.Results)
 }

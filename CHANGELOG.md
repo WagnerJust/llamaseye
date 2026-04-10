@@ -26,6 +26,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - GGUF parser: added upper-bound checks on key length (64 KiB), string length (1 MiB), and array length (1M elements) before allocating. A malformed `.gguf` file can no longer exhaust RAM via oversized `make()` calls.
 - README.md: corrected stale `bash llamaseye.sh --report` reference to `./llamaseye --report`.
 - `go.mod`: removed incorrect `// indirect` comment on `pflag` (direct dependency).
+- `AppendRecord` errors are now logged as warnings instead of silently discarded — prevents silent data loss when disk is full or output dir becomes unwritable.
+- `parseLlamaBenchOutput` errors are logged at debug level; empty results with zero exit code now returns `StatusError` instead of `StatusOK` with no throughput data.
+- `bufio.Writer.Flush()` errors in `GenerateMarkdown` and `GenerateCrossModelSummary` are now captured via named return values instead of silently dropped by `defer w.Flush()`.
 
 ---
 
