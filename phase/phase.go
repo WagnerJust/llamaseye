@@ -37,7 +37,7 @@ type WorkingSets struct {
 	FACTK     []state.FACTKCombo
 	CTKValues []string // independent CTK axis populated by Phase 2, used by Phase 7
 	CTVValues []string // independent CTV axis populated by Phase 2, used by Phase 7
-	Threads   []any    // int or "system_default" string
+	Threads   state.ThreadValues // nil entry = system_default
 	NKVO      []int
 	BUB       []state.BUBCombo
 	CTX       []int

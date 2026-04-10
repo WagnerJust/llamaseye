@@ -230,7 +230,7 @@ func TestP7CombinationMatrix_PrecisionFilter(t *testing.T) {
 	env.WS.CTVValues = []string{"q8_0", "f16"} // f16 more precise than q8_0 — should be filtered
 	env.WS.FACTK = []state.FACTKCombo{{FA: 1, CTK: "q8_0", CTV: "q8_0"}}
 	env.WS.NKVO = []int{0}
-	env.WS.Threads = []any{"system_default"}
+	env.WS.Threads = state.ThreadValues{nil}
 	env.WS.BUB = []state.BUBCombo{{B: 2048, UB: 512}}
 	env.WS.CTX = []int{8192}
 	env.Config.MinCTK = "q8_0"
@@ -265,7 +265,7 @@ func TestP7CombinationMatrix_IndependentKV(t *testing.T) {
 		{FA: 1, CTK: "q8_0", CTV: "q8_0"},
 	}
 	env.WS.NKVO = []int{0}
-	env.WS.Threads = []any{"system_default"}
+	env.WS.Threads = state.ThreadValues{nil}
 	env.WS.BUB = []state.BUBCombo{{B: 2048, UB: 512}}
 	env.WS.CTX = []int{8192}
 	env.Config.MinCTK = "q8_0"
@@ -430,7 +430,7 @@ func TestP7CombinationMatrix_GoalEarlyExit(t *testing.T) {
 	env.WS.NGL = []int{32}
 	env.WS.FACTK = []state.FACTKCombo{{FA: 1, CTK: "f16", CTV: "f16"}}
 	env.WS.NKVO = []int{0}
-	env.WS.Threads = []any{"system_default"}
+	env.WS.Threads = state.ThreadValues{nil}
 	env.WS.BUB = []state.BUBCombo{{B: 2048, UB: 512}}
 	env.WS.CTX = []int{4096, 8192, 16384, 32768, 65536}
 
@@ -583,7 +583,7 @@ func TestP7CombinationMatrix_NoGoal(t *testing.T) {
 	env.WS.NGL = []int{32}
 	env.WS.FACTK = []state.FACTKCombo{{FA: 1, CTK: "f16", CTV: "f16"}}
 	env.WS.NKVO = []int{0}
-	env.WS.Threads = []any{"system_default"}
+	env.WS.Threads = state.ThreadValues{nil}
 	env.WS.BUB = []state.BUBCombo{{B: 2048, UB: 512}}
 	env.WS.CTX = []int{4096}
 

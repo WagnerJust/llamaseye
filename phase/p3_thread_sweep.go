@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/WagnerJust/llamaseye/bench"
+	"github.com/WagnerJust/llamaseye/state"
 )
 
 // P3ThreadSweep sweeps CPU thread counts.
@@ -45,7 +46,7 @@ func (P3ThreadSweep) Run(ctx context.Context, env *PhaseEnv) error {
 
 	// System default run first (no -t flag)
 	if existing, skip := ShouldSkip(env, 3, "sys"); skip {
-		env.WS.Threads = append(env.WS.Threads, "system_default")
+		env.WS.Threads = append(env.WS.Threads, nil)
 		if existing.TG > bestTG {
 			bestTG = existing.TG
 		}
@@ -65,7 +66,7 @@ func (P3ThreadSweep) Run(ctx context.Context, env *PhaseEnv) error {
 			PhaseLabel: "thread_sweep",
 		})
 		if status == bench.StatusOK {
-			env.WS.Threads = append(env.WS.Threads, "system_default")
+			env.WS.Threads = append(env.WS.Threads, nil)
 			if tg > bestTG {
 				bestTG = tg
 				// system default → leave env.Best.Threads nil
@@ -82,7 +83,7 @@ func (P3ThreadSweep) Run(ctx context.Context, env *PhaseEnv) error {
 
 		comboKey := fmt.Sprintf("%d", t)
 		if existing, skip := ShouldSkip(env, 3, comboKey); skip {
-			env.WS.Threads = append(env.WS.Threads, t)
+			tc := t; env.WS.Threads = append(env.WS.Threads, &tc)
 			if existing.TG > bestTG {
 				bestTG = existing.TG
 				tc := t
@@ -108,7 +109,7 @@ func (P3ThreadSweep) Run(ctx context.Context, env *PhaseEnv) error {
 			PhaseLabel: "thread_sweep",
 		})
 		if status == bench.StatusOK {
-			env.WS.Threads = append(env.WS.Threads, t)
+			tc := t; env.WS.Threads = append(env.WS.Threads, &tc)
 			if tg > bestTG {
 				bestTG = tg
 				tc2 := t
@@ -118,7 +119,7 @@ func (P3ThreadSweep) Run(ctx context.Context, env *PhaseEnv) error {
 	}
 
 	if len(env.WS.Threads) == 0 {
-		env.WS.Threads = []any{"system_default"}
+		env.WS.Threads = state.ThreadValues{nil}
 	}
 	bestThreadsStr := "system default"
 	if env.Best.Threads != nil {

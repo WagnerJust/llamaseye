@@ -10,6 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 ### Added
 - CI pipeline (`ci.yml`): runs `go vet` and `go test -race` on every push/PR, plus `golangci-lint` for static analysis.
 - Release workflow now runs `go test` before building binaries.
@@ -40,6 +41,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - `sweep.jsonl` file handle is now opened once per model sweep and reused for all records, instead of opening and closing the file for every benchmark run. Reduces syscall overhead from O(n) opens to O(1) during Phase 7's combination matrix.
+- Thread working set replaced from `[]any` (requiring type switches at every consumer) with typed `state.ThreadValues` (`[]*int`), where `nil` means "system_default". JSON format is backward-compatible — existing `state.json` files with `"system_default"` strings unmarshal correctly.
 
 ### Removed
 - Dead code cleanup: removed `ParseThreadValues`, `ThreadValuesToAny`, `maxFloat`, `formatError`, `containsStr`, `binaryLabel` suppression, unused `axis` parameter from `ApplyPhase7MinsInt`, unused second parameter from `printHardwareSummary`, and `cmd.ParsePhaseList` re-export.
