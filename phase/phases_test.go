@@ -444,8 +444,11 @@ func TestP7CombinationMatrix_GoalEarlyExit(t *testing.T) {
 	if err := p.Run(context.Background(), env); err != nil {
 		t.Fatalf("P7: %v", err)
 	}
-	// Should have stopped early after 2 goal hits
-	// We can verify by checking exec call count
+	// With MaxHits=2 and 4 qualifying ctx values (8192, 16384, 32768, 65536),
+	// Phase 7 should stop after 2 combos — not run all 4.
+	if exec.idx > 2 {
+		t.Errorf("goal early-exit: expected at most 2 runs, got %d", exec.idx)
+	}
 }
 
 func intPtr(n int) *int {
