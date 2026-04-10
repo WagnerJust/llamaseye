@@ -394,6 +394,8 @@ results/
 
 `sweep.jsonl` is append-only and is the source of truth. `state.json` tracks which phases are complete and the best parameter values discovered so far, enabling `--resume` to pick up exactly where it left off.
 
+**Graceful shutdown:** Pressing Ctrl-C (or sending SIGTERM) cancels the current run, saves `state.json`, and exits cleanly. Use `--resume` to continue from where it stopped.
+
 **`sweep.md` sections:**
 - **Best Configurations** — top 10 results across all phases ranked by TG t/s
 - **Per-phase tables** — all runs for each phase, sorted by TG t/s, with a `> **Winner:**` callout line showing the best config for that axis

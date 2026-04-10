@@ -35,7 +35,7 @@ func (P4NKVOSweep) Run(ctx context.Context, env *PhaseEnv) error {
 			continue
 		}
 
-		status, tg, _ := RecordAndTrack(env, fmt.Sprintf("phase4/nkvo=%d", nkvo), bench.RunParams{
+		status, tg, _ := RecordAndTrack(ctx, env, fmt.Sprintf("phase4/nkvo=%d", nkvo), bench.RunParams{
 			NGL:        env.Best.NGL,
 			FA:         env.Best.FA,
 			CTK:        env.Best.CTK,
@@ -70,7 +70,7 @@ func (P4NKVOSweep) Run(ctx context.Context, env *PhaseEnv) error {
 				return ctx.Err()
 			default:
 			}
-			status, _, _ := RecordAndTrack(env, fmt.Sprintf("phase4/nkvo=1_ngl=%d", extra), bench.RunParams{
+			status, _, _ := RecordAndTrack(ctx, env, fmt.Sprintf("phase4/nkvo=1_ngl=%d", extra), bench.RunParams{
 				NGL:        extra,
 				FA:         env.Best.FA,
 				CTK:        env.Best.CTK,

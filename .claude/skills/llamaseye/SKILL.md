@@ -72,7 +72,7 @@ cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf \
 cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf \
   --rotor-bench ~/llama-cpp-rotorquant/build/bin/llama-bench
 
-# Resume an interrupted sweep
+# Resume an interrupted sweep (Ctrl-C saves state automatically)
 cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf --resume
 
 # Run only specific phases

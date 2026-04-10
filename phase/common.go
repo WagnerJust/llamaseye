@@ -210,13 +210,15 @@ func ShouldSkip(env *PhaseEnv, phaseID int, comboKey string) (output.ExistingCom
 }
 
 // RecordAndTrack runs a bench and writes the JSONL record.
+// The provided ctx is forwarded to WaitCool and RunBench, allowing
+// graceful cancellation on SIGINT/SIGTERM.
 // Returns the status and the TG t/s (0 if not available).
-func RecordAndTrack(env *PhaseEnv, label string, p bench.RunParams) (bench.Status, float64, float64) {
+func RecordAndTrack(ctx context.Context, env *PhaseEnv, label string, p bench.RunParams) (bench.Status, float64, float64) {
 	if env.Thermal != nil {
-		env.Thermal.WaitCool(context.Background())
+		env.Thermal.WaitCool(ctx)
 	}
 
-	res, err := env.Runner.RunBench(label, p)
+	res, err := env.Runner.RunBench(ctx, label, p)
 	if err != nil {
 		env.Logger.Warn("RunBench error for %s: %v", label, err)
 		return bench.StatusError, 0, 0

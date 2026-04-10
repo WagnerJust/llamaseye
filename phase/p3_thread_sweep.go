@@ -50,7 +50,7 @@ func (P3ThreadSweep) Run(ctx context.Context, env *PhaseEnv) error {
 			bestTG = existing.TG
 		}
 	} else {
-		status, tg, _ := RecordAndTrack(env, "phase3/threads=system_default", bench.RunParams{
+		status, tg, _ := RecordAndTrack(ctx, env, "phase3/threads=system_default", bench.RunParams{
 			NGL:        env.Best.NGL,
 			FA:         env.Best.FA,
 			CTK:        env.Best.CTK,
@@ -92,7 +92,7 @@ func (P3ThreadSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		}
 
 		tc := t // capture
-		status, tg, _ := RecordAndTrack(env, fmt.Sprintf("phase3/threads=%d", t), bench.RunParams{
+		status, tg, _ := RecordAndTrack(ctx, env, fmt.Sprintf("phase3/threads=%d", t), bench.RunParams{
 			NGL:        env.Best.NGL,
 			FA:         env.Best.FA,
 			CTK:        env.Best.CTK,

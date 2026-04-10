@@ -62,7 +62,7 @@ func TestRunBench_OK(t *testing.T) {
 	exec := &mockExecutor{stdout: stdout}
 	r := newTestRunner(t, exec)
 
-	res, err := r.RunBench("test", RunParams{
+	res, err := r.RunBench(context.Background(), "test", RunParams{
 		NGL: 20, FA: 1, CTK: "f16", CTV: "f16", NKVO: 0,
 		B: 2048, UB: 512, NPrompt: 512, NGen: 128, Reps: 3,
 		Phase: 1, PhaseLabel: "ngl_sweep",
@@ -88,7 +88,7 @@ func TestRunBench_OOM(t *testing.T) {
 	}
 	r := newTestRunner(t, exec)
 
-	res, err := r.RunBench("test", RunParams{
+	res, err := r.RunBench(context.Background(), "test", RunParams{
 		NGL: 99, FA: 0, CTK: "f16", CTV: "f16",
 		B: 2048, UB: 512, NPrompt: 512, NGen: 128, Reps: 1,
 	})
@@ -104,7 +104,7 @@ func TestRunBench_Timeout(t *testing.T) {
 	exec := &mockExecutor{slowTimeout: true}
 	r := newTestRunner(t, exec)
 
-	res, err := r.RunBench("test", RunParams{
+	res, err := r.RunBench(context.Background(), "test", RunParams{
 		NGL: 20, FA: 0, CTK: "f16", CTV: "f16",
 		B: 2048, UB: 512, NPrompt: 512, NGen: 128, Reps: 1,
 	})
@@ -124,7 +124,7 @@ func TestRunBench_Error(t *testing.T) {
 	}
 	r := newTestRunner(t, exec)
 
-	res, err := r.RunBench("test", RunParams{
+	res, err := r.RunBench(context.Background(), "test", RunParams{
 		NGL: 20, FA: 0, CTK: "f16", CTV: "f16",
 		B: 2048, UB: 512, NPrompt: 512, NGen: 128, Reps: 1,
 	})
@@ -141,7 +141,7 @@ func TestRunBench_DryRun(t *testing.T) {
 	r := newTestRunner(t, exec)
 	r.Config.DryRun = true
 
-	res, err := r.RunBench("test", RunParams{NGL: 20, CTK: "f16", CTV: "f16", B: 2048, UB: 512, NPrompt: 512, NGen: 128, Reps: 1})
+	res, err := r.RunBench(context.Background(), "test", RunParams{NGL: 20, CTK: "f16", CTV: "f16", B: 2048, UB: 512, NPrompt: 512, NGen: 128, Reps: 1})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestRunBench_TurboUnavailable(t *testing.T) {
 	r.Selector.TurboAvailable = false
 
 	// turbo type with unavailable turbo binary should error or return error status
-	res, err := r.RunBench("test-turbo", RunParams{CTK: "turbo3", CTV: "f16", NGL: 20, B: 2048, UB: 512, NPrompt: 512, NGen: 128, Reps: 1})
+	res, err := r.RunBench(context.Background(), "test-turbo", RunParams{CTK: "turbo3", CTV: "f16", NGL: 20, B: 2048, UB: 512, NPrompt: 512, NGen: 128, Reps: 1})
 	if err == nil && (res == nil || res.Status != StatusError) {
 		t.Error("expected error or error status for turbo with unavailable binary")
 	}

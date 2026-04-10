@@ -59,7 +59,9 @@ type llamaBenchLine struct {
 }
 
 // RunBench executes a single llama-bench invocation and returns the result.
-func (r *BenchRunner) RunBench(label string, p RunParams) (*RunResult, error) {
+// The provided ctx is used as the parent for the per-run timeout, allowing
+// callers to cancel in-flight benchmarks (e.g. on SIGINT).
+func (r *BenchRunner) RunBench(ctx context.Context, label string, p RunParams) (*RunResult, error) {
 	binary, binaryLabel, err := r.Selector.Select(p.CTK, p.CTV)
 	if err != nil {
 		return nil, err
@@ -111,7 +113,7 @@ func (r *BenchRunner) RunBench(label string, p RunParams) (*RunResult, error) {
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	ctx, cancel := context.WithTimeout(context.Background(),
+	ctx, cancel := context.WithTimeout(ctx,
 		time.Duration(r.Config.TimeoutSec)*time.Second)
 	defer cancel()
 

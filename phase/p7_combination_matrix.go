@@ -165,7 +165,7 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 								label := fmt.Sprintf("p7/ngl=%d_fa=%d_ctk=%s_ctv=%s_nkvo=%d_b=%d_ub=%d_ctx=%d",
 									ngl, fa, ctk, ctv, nkvo, bub.B, bub.UB, ctxVal)
 
-								status, tg, pp := RecordAndTrack(env, label, bench.RunParams{
+								status, tg, pp := RecordAndTrack(ctx, env, label, bench.RunParams{
 									NGL:        ngl,
 									FA:         fa,
 									CTK:        ctk,

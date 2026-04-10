@@ -157,7 +157,7 @@ func (P2FAKVSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		}
 
 		label := fmt.Sprintf("phase2/fa=%d_ctk=%s_ctv=%s", combo.FA, combo.CTK, combo.CTV)
-		status, tg, _ := RecordAndTrack(env, label, bench.RunParams{
+		status, tg, _ := RecordAndTrack(ctx, env, label, bench.RunParams{
 			NGL:        env.Best.NGL,
 			FA:         combo.FA,
 			CTK:        combo.CTK,

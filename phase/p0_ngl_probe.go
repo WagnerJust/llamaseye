@@ -37,7 +37,7 @@ func (P0NGLProbe) Run(ctx context.Context, env *PhaseEnv) error {
 		}
 
 		env.Logger.Log("[Phase 0] Probing ngl=%d", ngl)
-		status, _, _ := RecordAndTrack(env, "phase0/ngl="+itoa(ngl), bench.RunParams{
+		status, _, _ := RecordAndTrack(ctx, env, "phase0/ngl="+itoa(ngl), bench.RunParams{
 			NGL:        ngl,
 			FA:         0,
 			CTK:        "f16",
