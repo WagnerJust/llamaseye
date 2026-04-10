@@ -289,10 +289,7 @@ func validateBenchBinary(path, marker string) bool {
 	if err != nil || info.Mode()&0111 == 0 {
 		return false
 	}
-	out, err := exec.Command(path, "--help").CombinedOutput()
-	if err != nil {
-		// --help may exit non-zero on some builds; check output anyway.
-	}
+	out, _ := exec.Command(path, "--help").CombinedOutput()
 	return strings.Contains(string(out), marker)
 }
 

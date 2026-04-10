@@ -38,6 +38,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - `state.Load` now uses `errors.Is(err, os.ErrNotExist)` instead of deprecated `os.IsNotExist`.
 - Goal spec parsing deduplicated — `config.ParseGoalSpec` is the single source of truth, replacing duplicate logic in `sweep/orchestrator.go` and `output/markdown.go`.
 - Inline anonymous `Logger` interface in `bench/runner.go` replaced with named `DebugLogger` interface for discoverability.
+- Fixed remaining unchecked `fmt.Sscanf` return values in `config/config.go` and `cmd/root_test.go` flagged by `errcheck` linter.
+- Removed empty `if err != nil` branch in `validateBenchBinary` (SA9003 staticcheck).
 
 ### Changed
 - `sweep.jsonl` file handle is now opened once per model sweep and reused for all records, instead of opening and closing the file for every benchmark run. Reduces syscall overhead from O(n) opens to O(1) during Phase 7's combination matrix.

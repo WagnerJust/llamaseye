@@ -74,7 +74,9 @@ func TestResolveModels_ModelNotFound(t *testing.T) {
 func TestResolveModels_ModelsDir(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"a.gguf", "b.gguf", "not-a-model.txt"} {
-		os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0644)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	cfg := testConfig()
@@ -91,10 +93,14 @@ func TestResolveModels_ModelsDir(t *testing.T) {
 func TestResolveModels_ModelList(t *testing.T) {
 	dir := t.TempDir()
 	model := filepath.Join(dir, "m.gguf")
-	os.WriteFile(model, []byte("fake"), 0644)
+	if err := os.WriteFile(model, []byte("fake"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	listFile := filepath.Join(dir, "list.txt")
-	os.WriteFile(listFile, []byte("# comment\nm.gguf\n\n"), 0644)
+	if err := os.WriteFile(listFile, []byte("# comment\nm.gguf\n\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := testConfig()
 	cfg.ModelListFile = listFile
