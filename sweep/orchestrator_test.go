@@ -339,9 +339,28 @@ func TestValidateBenchBinary_NonExistentPath(t *testing.T) {
 }
 
 func TestValidateBenchBinary_MissingMarker(t *testing.T) {
-	// Use a real executable that won't have "turbo3" in its --help output.
+	// Use a real executable that won't have "turbo3" in its --help output or binary content.
 	if validateBenchBinary("/bin/echo", "turbo3") {
-		t.Error("validateBenchBinary should return false when marker is absent from --help output")
+		t.Error("validateBenchBinary should return false when marker is absent from --help output and binary")
+	}
+}
+
+func TestValidateBenchBinary_MarkerInBinaryOnly(t *testing.T) {
+	// Simulate a binary that has the marker string compiled in but doesn't
+	// print it in --help output (e.g. turbo-llama-bench builds that omit the
+	// KV cache type enumeration from help text).
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "fake-bench")
+
+	// Write a shell script that prints a generic help message (no marker) but
+	// whose file content contains the marker string as a comment.
+	script := "#!/bin/sh\n# turbo3\necho 'usage: fake-bench [options]'\nexit 0\n"
+	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
+		t.Fatalf("write fake binary: %v", err)
+	}
+
+	if !validateBenchBinary(bin, "turbo3") {
+		t.Error("validateBenchBinary should return true when marker is present in binary content even if absent from --help output")
 	}
 }
 

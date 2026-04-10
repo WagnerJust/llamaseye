@@ -6,6 +6,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.7.3] — 2026-04-09
+
+### Fixed
+- `validateBenchBinary` now falls back to scanning the binary's string table when `--help` output does not enumerate the marker string. This fixes turbo-bench detection for builds of `turbo-llama-bench` that compile in `turbo3`/`turbo2`/`turbo4` KV cache support but do not list valid cache type names in their help text — such builds were previously silently treated as unavailable, causing all turbo KV runs to be skipped.
+
+---
+
 ## [1.7.2] — 2026-04-09
 
 ### Added

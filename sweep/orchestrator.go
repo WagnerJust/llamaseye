@@ -279,8 +279,11 @@ func parseGoal(spec string, hits int) *phase.GoalConfig {
 	}
 }
 
-// validateBenchBinary checks that path is an executable file whose --help
-// output contains marker (e.g. "turbo3" for TurboQuant, "planar3" for RotorQuant).
+// validateBenchBinary checks that path is an executable file that supports
+// the given marker feature (e.g. "turbo3" for TurboQuant, "planar3" for
+// RotorQuant). It first checks --help output; if the marker is absent there
+// (some builds omit the type enumeration from help text), it falls back to
+// scanning the binary's string table for the marker string.
 func validateBenchBinary(path, marker string) bool {
 	if path == "" {
 		return false
@@ -290,7 +293,16 @@ func validateBenchBinary(path, marker string) bool {
 		return false
 	}
 	out, _ := exec.Command(path, "--help").CombinedOutput()
-	return strings.Contains(string(out), marker)
+	if strings.Contains(string(out), marker) {
+		return true
+	}
+	// Some builds don't enumerate valid KV cache types in --help output.
+	// Fall back to scanning the binary's string table for the marker.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), marker)
 }
 
 func printSummary(logger *output.Logger, env *phase.PhaseEnv) {
