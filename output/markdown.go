@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/WagnerJust/llamaseye/config"
 )
 
 // record is an internal struct for reading sweep.jsonl rows.
@@ -153,7 +155,8 @@ func GenerateMarkdown(outputDir, modelStem, goalSpec, goalSort string, timeoutSe
 
 	// Goal results section (when --goal was active and phase 7 ran)
 	if goalSpec != "" {
-		goalCtx, goalTG, goalPP := parseGoalSpec(goalSpec)
+		gs := config.ParseGoalSpec(goalSpec)
+		goalCtx, goalTG, goalPP := gs.CtxMin, gs.TGMin, gs.PPMin
 		phase7OK := filterByPhaseStatus(records, 7, "ok")
 		if len(phase7OK) > 0 {
 			fmt.Fprintf(w, "## Goal Results — %s\n\n", goalSpecDesc(goalCtx, goalTG, goalPP))
@@ -421,24 +424,6 @@ func fmtTS(v float64) string {
 	return fmt.Sprintf("%.2f", v)
 }
 
-func parseGoalSpec(spec string) (ctx int, tg, pp float64) {
-	for _, part := range strings.Split(spec, ",") {
-		part = strings.TrimSpace(part)
-		kv := strings.SplitN(part, "=", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		switch kv[0] {
-		case "ctx":
-			_, _ = fmt.Sscanf(kv[1], "%d", &ctx)
-		case "tg":
-			_, _ = fmt.Sscanf(kv[1], "%f", &tg)
-		case "pp":
-			_, _ = fmt.Sscanf(kv[1], "%f", &pp)
-		}
-	}
-	return
-}
 
 func goalSpecDesc(ctx int, tg, pp float64) string {
 	var parts []string

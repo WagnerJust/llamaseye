@@ -22,6 +22,11 @@ type CommandExecutor interface {
 	Run(ctx context.Context, binary string, args []string, stdout, stderr io.Writer) (exitCode int, err error)
 }
 
+// DebugLogger is satisfied by any logger that supports formatted debug output.
+type DebugLogger interface {
+	Debugf(string, ...any)
+}
+
 // RunParams holds all parameters for a single bench run.
 type RunParams struct {
 	NGL     int
@@ -47,7 +52,7 @@ type BenchRunner struct {
 	OutputDir string // per-model output directory (must have "raw/" subdir)
 	ModelPath string
 	ModelStem string
-	Logger    interface{ Debugf(string, ...any) } // optional; nil = no debug output
+	Logger    DebugLogger // optional; nil = no debug output
 }
 
 // llamaBenchLine is a single JSON record emitted by llama-bench -o jsonl.

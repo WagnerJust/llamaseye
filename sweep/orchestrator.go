@@ -270,23 +270,13 @@ func parseGoal(spec string, hits int) *phase.GoalConfig {
 	if hits <= 0 {
 		hits = 3
 	}
-	g := &phase.GoalConfig{MaxHits: hits}
-	for _, part := range strings.Split(spec, ",") {
-		part = strings.TrimSpace(part)
-		kv := strings.SplitN(part, "=", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		switch kv[0] {
-		case "ctx":
-			_, _ = fmt.Sscanf(kv[1], "%d", &g.CtxMin)
-		case "tg":
-			_, _ = fmt.Sscanf(kv[1], "%f", &g.TGMin)
-		case "pp":
-			_, _ = fmt.Sscanf(kv[1], "%f", &g.PPMin)
-		}
+	gs := config.ParseGoalSpec(spec)
+	return &phase.GoalConfig{
+		CtxMin:  gs.CtxMin,
+		TGMin:   gs.TGMin,
+		PPMin:   gs.PPMin,
+		MaxHits: hits,
 	}
-	return g
 }
 
 // validateBenchBinary checks that path is an executable file whose --help
