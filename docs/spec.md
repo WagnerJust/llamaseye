@@ -1169,6 +1169,7 @@ These variables were previously CLI-only but are now also read from the environm
 | `SWEEP_GOAL_HITS` | `3` | Distinct (ngl,ctk,nkvo,ctx) configs before goal early-exit (`--goal-hits`) |
 | `SWEEP_GOAL_SORT` | `tg` | Goal Results table sort axis: tg, ctx, ngl, pp (`--goal-sort`) |
 | `SWEEP_ONLY_PHASES` | *(unset)* | Run only these phases, comma-separated (`--only-phases`) |
+| `SWEEP_FOCUSED` | `false` | Only run combos not already in `sweep.jsonl` (`--focused`); requires `--only-phases` |
 | `SWEEP_SKIP_PHASES` | *(unset)* | Skip these phases, comma-separated (`--skip-phases`) |
 | `SWEEP_MODEL_LIST` | *(unset)* | Path to model list file (`--model-list`) |
 | `SWEEP_START_NGL` | *(unset)* | Begin NGL sweep at this value (`--start-ngl`) |
@@ -1351,6 +1352,7 @@ Sweep control:
   --repetitions <n>          Repetitions per run (-r). Default: 3.
   --only-phases <n,n,...>    Run only the listed phase numbers.
   --skip-phases <n,n,...>    Skip the listed phase numbers.
+  --focused                  Only run combos not already in sweep.jsonl (requires --only-phases).
   --resume                   Skip phases already marked complete in state.json.
   --overwrite                Delete existing output for a model and start fresh.
   --min-viable-ts <f>        Minimum TG t/s to mark viable. Default: 2.0.
@@ -1475,6 +1477,25 @@ load `phases_complete` and skip those phases. If `--overwrite` is set, delete
 the model's output directory and start clean. Default behavior (no flag) is
 to append and re-run all phases — useful if you want to collect more data
 without discarding what's already there.
+
+### Focused re-run (`--focused`)
+
+When `--focused` is combined with `--only-phases`, each phase diffs its planned
+combos against existing `status: "ok"` entries in `sweep.jsonl`. Only combos
+not yet present are executed. Skipped combos still populate the phase's working
+set (from JSONL data) so downstream phases see the full picture.
+
+Combo key per phase:
+- P0/P1: `ngl`
+- P2: `(fa, ctk, ctv)`
+- P3: `threads` (`"sys"` for system default)
+- P4: `nkvo`
+- P5: `(b, ub)`
+- P6: `ctx`
+- P7: `(ngl, fa, ctk, ctv, nkvo, threads, b, ub, ctx)`
+
+If all combos already exist, the phase completes immediately with working sets
+reconstructed from JSONL data.
 
 ### Estimating Phase 7 size before running
 

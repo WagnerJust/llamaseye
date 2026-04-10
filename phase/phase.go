@@ -57,6 +57,10 @@ type PhaseEnv struct {
 	OutputDir  string
 	ModelPath  string
 	ModelStem  string
+
+	// SkipCombos holds combo keys from sweep.jsonl when --focused is active.
+	// Keyed by phase ID → combo key string → performance data.
+	SkipCombos map[int]map[string]output.ExistingCombo
 }
 
 // NewPhaseEnv creates a PhaseEnv with default best values.

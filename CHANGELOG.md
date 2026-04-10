@@ -6,6 +6,22 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.7.1] — 2026-04-09
+
+### Fixed
+- Deduplicated combo key logic between `output.ComboKey` and the removed `phase.FocusedComboKey` to prevent drift.
+- Used `errors.Is(err, os.ErrNotExist)` instead of `os.IsNotExist` for robust missing-file detection in `--focused` mode.
+- Phase 7 now logs skipped combo counts separately from executed run counts when `--focused` is active.
+
+---
+
+## [1.7.0] — 2026-04-09
+
+### Added
+- **Focused phase re-run** (`--focused`) — when combined with `--only-phases`, each phase diffs its planned combos against existing `status: "ok"` entries in `sweep.jsonl` and only runs combos not yet present. Skipped combos still populate working sets so downstream phases see the full picture. Env var: `SWEEP_FOCUSED` (default: `false`). Closes #33.
+
+---
+
 ## [1.6.0] — 2026-04-08
 
 ### Added

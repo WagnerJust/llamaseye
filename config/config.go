@@ -94,6 +94,9 @@ type Config struct {
 	// Asymmetric K/V quant combos in Phase 2
 	AsymmetricKV bool
 
+	// Focused mode: only run combos not already in sweep.jsonl
+	Focused bool
+
 	// Debug mode
 	Debug bool
 }
@@ -183,6 +186,7 @@ func Defaults() *Config {
 		OptimizedSweep:  envBool("SWEEP_OPTIMIZED_SWEEP", false),
 		CTV:             envStr("SWEEP_CTV", ""),
 		AsymmetricKV:   envBool("SWEEP_ASYMMETRIC_KV", true),
+		Focused:         envBool("SWEEP_FOCUSED", false),
 		Debug:           envBool("SWEEP_DEBUG", false),
 	}
 }
@@ -216,6 +220,9 @@ func PhaseInList(phase int, list []int) bool {
 func (c *Config) Validate() error {
 	if c.Resume && c.Overwrite {
 		return fmt.Errorf("--resume and --overwrite are mutually exclusive")
+	}
+	if c.Focused && len(c.OnlyPhases) == 0 {
+		return fmt.Errorf("--focused requires --only-phases")
 	}
 	if len(c.OnlyPhases) > 0 && len(c.SkipPhases) > 0 {
 		return fmt.Errorf("--only-phases and --skip-phases are mutually exclusive")

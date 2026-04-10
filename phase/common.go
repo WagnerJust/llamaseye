@@ -193,6 +193,22 @@ func FindFACTKByKV(ws []state.FACTKCombo, ctk, ctv string) (fa int, found bool) 
 	return
 }
 
+// ShouldSkip returns true and the existing combo data if --focused is active
+// and this combo was already successfully tested in sweep.jsonl.
+func ShouldSkip(env *PhaseEnv, phaseID int, comboKey string) (output.ExistingCombo, bool) {
+	if !env.Config.Focused || env.SkipCombos == nil {
+		return output.ExistingCombo{}, false
+	}
+	if phaseMap, ok := env.SkipCombos[phaseID]; ok {
+		if combo, found := phaseMap[comboKey]; found {
+			env.Logger.Debugf("[Phase %d] --focused: skipping %s (already in sweep.jsonl, TG=%.2f)",
+				phaseID, comboKey, combo.TG)
+			return combo, true
+		}
+	}
+	return output.ExistingCombo{}, false
+}
+
 // RecordAndTrack runs a bench and writes the JSONL record.
 // Returns the status and the TG t/s (0 if not available).
 func RecordAndTrack(env *PhaseEnv, label string, p bench.RunParams) (bench.Status, float64, float64) {
