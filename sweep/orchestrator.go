@@ -39,7 +39,8 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 		return err
 	}
 
-	// Logger now knows the output dir — re-open with log file
+	// Per-model logger writes to sweep.log inside the model's output dir.
+	// This is a local variable — s.Logger is never mutated.
 	logPath := filepath.Join(outputDir, "sweep.log")
 	logger, err := output.NewLogger(logPath)
 	if err != nil {
@@ -47,11 +48,10 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 	}
 	defer logger.Close()
 	logger.Debug = s.Config.Debug
-	s.Logger = logger
 
 	// Write hardware.json
 	if err := output.WriteHardwareJSON(outputDir, s.HW); err != nil {
-		s.Logger.Warn("write hardware.json: %v", err)
+		logger.Warn("write hardware.json: %v", err)
 	}
 
 	// Build runner
@@ -79,47 +79,47 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 		GPULimit:    s.Config.GPUTempLimit,
 		PollSeconds: s.Config.CoolPollSec,
 		Disabled:    s.Config.NoThermal,
-		Log:         s.Logger.Log,
-		DebugLog:    s.Logger.Debugf,
+		Log:         logger.Log,
+		DebugLog:    logger.Debugf,
 	}
 
 	// Build PhaseEnv
-	env := phase.NewPhaseEnv(s.Config, s.HW, runner, thermal, s.Logger,
+	env := phase.NewPhaseEnv(s.Config, s.HW, runner, thermal, logger,
 		outputDir, modelPath, modelStem)
 
 	// Parse GGUF metadata to cap NGL at the model's actual layer count.
 	// Values above NumLayers are functionally identical (llama.cpp clamps silently).
 	if meta, err := gguf.Parse(modelPath); err == nil && meta.NumLayers > 0 {
 		env.NumLayers = meta.NumLayers
-		s.Logger.Log("[GGUF] %d layers, %s architecture", meta.NumLayers, meta.Architecture)
-		s.Logger.Debugf("[GGUF] file=%.2f GiB heads=%d kv_heads=%d key_len=%d val_len=%d hybrid=%v",
+		logger.Log("[GGUF] %d layers, %s architecture", meta.NumLayers, meta.Architecture)
+		logger.Debugf("[GGUF] file=%.2f GiB heads=%d kv_heads=%d key_len=%d val_len=%d hybrid=%v",
 			meta.FileGiB, meta.HeadCount, meta.KVHeadsMax, meta.KeyLen, meta.ValLen, meta.HasHybrid)
 		if meta.HasHybrid {
-			s.Logger.Debugf("[GGUF] hybrid: swa_layers=%d global_layers=%d swa_kv_heads=%d global_kv_heads=%d sliding_win=%d",
+			logger.Debugf("[GGUF] hybrid: swa_layers=%d global_layers=%d swa_kv_heads=%d global_kv_heads=%d sliding_win=%d",
 				meta.NSWALayers, meta.NGlobalLayers, meta.SWAKVHeads, meta.GlobalKVHeads, meta.SlidingWin)
 		}
 		if s.Config.OptimizedSweep {
 			pred := gguf.Predict(meta, s.HW.GPUVRAMGiB, s.HW.RAMGiB)
-			s.Logger.Debugf("[GGUF] predict: max_ngl=%d start_ngl=%d best_ctx_vram=%d best_ctx_ram=%d start_ctx=%d",
+			logger.Debugf("[GGUF] predict: max_ngl=%d start_ngl=%d best_ctx_vram=%d best_ctx_ram=%d start_ctx=%d",
 				pred.MaxNGLPred, pred.StartNGL, pred.BestCtxVRAM, pred.BestCtxRAM, pred.StartCtx)
 		}
 	} else if err != nil {
-		s.Logger.Log("[GGUF] Could not parse metadata (%v) — NGL ceiling defaults to 99", err)
+		logger.Log("[GGUF] Could not parse metadata (%v) — NGL ceiling defaults to 99", err)
 	}
 
 	// Load existing state if available
 	var phasesComplete []int
 	savedState, err := state.Load(outputDir)
 	if err != nil {
-		s.Logger.Warn("load state.json: %v", err)
+		logger.Warn("load state.json: %v", err)
 	}
 	if savedState != nil {
 		env.LoadFromState(savedState)
 		if s.Config.Resume {
 			phasesComplete = savedState.PhasesComplete
-			s.Logger.Log("[STATE] Resuming — phases complete: %v", phasesComplete)
+			logger.Log("[STATE] Resuming — phases complete: %v", phasesComplete)
 		} else {
-			s.Logger.Log("[STATE] Loaded prior working sets from state.json")
+			logger.Log("[STATE] Loaded prior working sets from state.json")
 		}
 	}
 
@@ -134,7 +134,7 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 		for _, m := range combos {
 			total += len(m)
 		}
-		s.Logger.Log("[FOCUSED] Loaded %d existing combos from sweep.jsonl", total)
+		logger.Log("[FOCUSED] Loaded %d existing combos from sweep.jsonl", total)
 	}
 
 	// Build goal config
@@ -160,20 +160,20 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 
 		// --only-phases filter
 		if len(s.Config.OnlyPhases) > 0 && !config.PhaseInList(phaseID, s.Config.OnlyPhases) {
-			s.Logger.Log("[Phase %d] Skipped (not in --only-phases)", phaseID)
+			logger.Log("[Phase %d] Skipped (not in --only-phases)", phaseID)
 			continue
 		}
 		// --skip-phases filter
 		if config.PhaseInList(phaseID, s.Config.SkipPhases) {
-			s.Logger.Log("[Phase %d] Skipped (in --skip-phases)", phaseID)
+			logger.Log("[Phase %d] Skipped (in --skip-phases)", phaseID)
 			continue
 		}
 		// Resume: skip already-completed phases unless explicitly requested
 		if config.PhaseInList(phaseID, phasesComplete) {
 			if len(s.Config.OnlyPhases) > 0 && config.PhaseInList(phaseID, s.Config.OnlyPhases) {
-				s.Logger.Log("[Phase %d] Already complete — re-running (explicitly requested via --only-phases)", phaseID)
+				logger.Log("[Phase %d] Already complete — re-running (explicitly requested via --only-phases)", phaseID)
 			} else {
-				s.Logger.Log("[Phase %d] Already complete — skipping (--resume)", phaseID)
+				logger.Log("[Phase %d] Already complete — skipping (--resume)", phaseID)
 				continue
 			}
 		}
@@ -185,17 +185,17 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 		// Save state
 		phasesComplete = appendUnique(phasesComplete, phaseID)
 		if err := state.Save(outputDir, env.ToState(phasesComplete)); err != nil {
-			s.Logger.Warn("save state.json: %v", err)
+			logger.Warn("save state.json: %v", err)
 		}
 	}
 
 	// Generate markdown
 	if err := output.GenerateMarkdown(outputDir, modelStem, s.Config.Goal, s.Config.GoalSort, s.Config.TimeoutSec); err != nil {
-		s.Logger.Warn("generate markdown: %v", err)
+		logger.Warn("generate markdown: %v", err)
 	}
 
-	printSummary(s.Logger, env)
-	s.Logger.Log("===== Sweep complete: %s =====", modelStem)
+	printSummary(logger, env)
+	logger.Log("===== Sweep complete: %s =====", modelStem)
 	return nil
 }
 
