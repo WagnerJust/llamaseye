@@ -8,6 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [1.7.2] — 2026-04-09
 
+<<<<<<< HEAD
 ### Added
 - CI pipeline (`ci.yml`): runs `go vet` and `go test -race` on every push/PR, plus `golangci-lint` for static analysis.
 - Release workflow now runs `go test` before building binaries.
@@ -34,6 +35,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - `parseOptInt` now returns an error on invalid integer values (e.g., `--start-ngl abc`) instead of silently treating them as unset. The sweep fails fast with a clear error message.
 - `detectTurbo` renamed to `validateBenchBinary` — now actually runs `<binary> --help` and checks for the expected marker string (`turbo3` for TurboQuant, `planar3` for RotorQuant) instead of only checking that the file exists with the execute bit. A standard llama-bench at the wrong path will no longer be silently accepted.
 - Eliminated double `os.Stat` call (TOCTOU race) in binary validation.
+- `SweepModel` no longer mutates `s.Logger` — per-model logger is now a local variable, preventing shared state corruption across sequential model sweeps and eliminating a potential data race if models were ever swept concurrently.
 
 ### Removed
 - Dead code cleanup: removed `ParseThreadValues`, `ThreadValuesToAny`, `maxFloat`, `formatError`, `containsStr`, `binaryLabel` suppression, unused `axis` parameter from `ApplyPhase7MinsInt`, unused second parameter from `printHardwareSummary`, and `cmd.ParsePhaseList` re-export.
