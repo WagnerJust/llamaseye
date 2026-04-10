@@ -403,7 +403,7 @@ results/
 
 `sweep.md` can be regenerated at any time from `sweep.jsonl` without re-running benchmarks:
 ```bash
-bash llamaseye.sh --report --output-dir ./results
+./llamaseye --report --output-dir ./results
 ```
 
 ---
