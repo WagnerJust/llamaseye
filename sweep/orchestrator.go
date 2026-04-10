@@ -270,11 +270,11 @@ func parseGoal(spec string, hits int) *phase.GoalConfig {
 		}
 		switch kv[0] {
 		case "ctx":
-			fmt.Sscanf(kv[1], "%d", &g.CtxMin)
+			_, _ = fmt.Sscanf(kv[1], "%d", &g.CtxMin)
 		case "tg":
-			fmt.Sscanf(kv[1], "%f", &g.TGMin)
+			_, _ = fmt.Sscanf(kv[1], "%f", &g.TGMin)
 		case "pp":
-			fmt.Sscanf(kv[1], "%f", &g.PPMin)
+			_, _ = fmt.Sscanf(kv[1], "%f", &g.PPMin)
 		}
 	}
 	return g

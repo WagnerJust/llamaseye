@@ -36,9 +36,9 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 	effMinCTK := derivedMinCTK(env)
 
 	// Apply minimums to working sets
-	nglP7 := ApplyPhase7MinsInt("ngl", env.WS.NGL, effMinNGL,
+	nglP7 := ApplyPhase7MinsInt(env.WS.NGL, effMinNGL,
 		func(f string, a ...any) { env.Logger.Warn(f, a...) })
-	ctxP7 := ApplyPhase7MinsInt("ctx", env.WS.CTX, effMinCtx,
+	ctxP7 := ApplyPhase7MinsInt(env.WS.CTX, effMinCtx,
 		func(f string, a ...any) { env.Logger.Warn(f, a...) })
 	bubP7 := filterBUBByMinB(env.WS.BUB, effMinB)
 	if len(bubP7) == 0 {
@@ -376,11 +376,3 @@ func sortIntsDesc(s []int) {
 	}
 }
 
-func containsStr(s []string, v string) bool {
-	for _, elem := range s {
-		if elem == v {
-			return true
-		}
-	}
-	return false
-}

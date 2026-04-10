@@ -430,11 +430,11 @@ func parseGoalSpec(spec string) (ctx int, tg, pp float64) {
 		}
 		switch kv[0] {
 		case "ctx":
-			fmt.Sscanf(kv[1], "%d", &ctx)
+			_, _ = fmt.Sscanf(kv[1], "%d", &ctx)
 		case "tg":
-			fmt.Sscanf(kv[1], "%f", &tg)
+			_, _ = fmt.Sscanf(kv[1], "%f", &tg)
 		case "pp":
-			fmt.Sscanf(kv[1], "%f", &pp)
+			_, _ = fmt.Sscanf(kv[1], "%f", &pp)
 		}
 	}
 	return

@@ -542,14 +542,6 @@ func TestHelpers_SortIntsDesc(t *testing.T) {
 	}
 }
 
-func TestHelpers_MaxFloat(t *testing.T) {
-	if maxFloat(3.0, 5.0) != 5.0 {
-		t.Error("maxFloat(3,5) should be 5")
-	}
-	if maxFloat(7.0, 2.0) != 7.0 {
-		t.Error("maxFloat(7,2) should be 7")
-	}
-}
 
 func TestHelpers_ContainsInt(t *testing.T) {
 	if !containsInt([]int{1, 2, 3}, 2) {

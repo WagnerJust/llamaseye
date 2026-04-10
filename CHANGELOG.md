@@ -29,6 +29,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - `AppendRecord` errors are now logged as warnings instead of silently discarded — prevents silent data loss when disk is full or output dir becomes unwritable.
 - `parseLlamaBenchOutput` errors are logged at debug level; empty results with zero exit code now returns `StatusError` instead of `StatusOK` with no throughput data.
 - `bufio.Writer.Flush()` errors in `GenerateMarkdown` and `GenerateCrossModelSummary` are now captured via named return values instead of silently dropped by `defer w.Flush()`.
+- Fixed unchecked `fmt.Sscanf` and `fmt.Scan` return values flagged by `errcheck` linter.
+- Simplified `jsonlParamsJSON` struct literal to direct type conversion (`gosimple S1016`).
+
+### Removed
+- Dead code cleanup: removed `ParseThreadValues`, `ThreadValuesToAny`, `maxFloat`, `formatError`, `containsStr`, `binaryLabel` suppression, unused `axis` parameter from `ApplyPhase7MinsInt`, unused second parameter from `printHardwareSummary`, and `cmd.ParsePhaseList` re-export.
+- Removed suppressed viability computation (`MinTGTS` check that was computed and discarded with `_ = v`).
 
 ---
 

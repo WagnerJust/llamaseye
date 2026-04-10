@@ -130,7 +130,7 @@ func ApplyAxisOptsInt(fullList []int, startValue *int, direction string, warn fu
 // For numeric axes: removes values strictly < minValue.
 // For "ctk": removes types with lower quality index than minValue.
 // Returns the full list unchanged if minValue is nil/empty.
-func ApplyPhase7MinsInt(axis string, values []int, minValue *int, warn func(string, ...any)) []int {
+func ApplyPhase7MinsInt(values []int, minValue *int, warn func(string, ...any)) []int {
 	if minValue == nil {
 		return values
 	}
@@ -239,13 +239,6 @@ func RecordAndTrack(ctx context.Context, env *PhaseEnv, label string, p bench.Ru
 		Repetitions: p.Reps,
 	}
 	jp.ThreadsIsDefault = p.Threads == nil
-
-	// Viability
-	if res.Status == bench.StatusOK && p.NGen > 0 {
-		tg := bench.TGSpeed(res.Results)
-		v := tg >= env.Config.MinTGTS
-		_ = v
-	}
 
 	binaryLabel := "standard"
 	if p.CTK != "" {
