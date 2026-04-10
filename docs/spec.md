@@ -953,6 +953,24 @@ for short runs that don't push thermals.
 
 ---
 
+## Signal Handling & Graceful Shutdown
+
+The binary registers a signal handler for `SIGINT` and `SIGTERM` via
+`signal.NotifyContext`. When a signal is received:
+
+1. The root context is cancelled.
+2. Any in-flight `llama-bench` subprocess is killed (the per-run timeout
+   context inherits from the root context).
+3. Thermal `WaitCool` loops exit immediately.
+4. The current phase loop exits via `ctx.Done()`.
+5. `state.json` is saved with all phases completed so far, enabling
+   `--resume` to pick up where the sweep left off.
+
+Context flows: `main.go` → `SweepModel(ctx)` → `Phase.Run(ctx)` →
+`RecordAndTrack(ctx)` → `WaitCool(ctx)` + `RunBench(ctx)`.
+
+---
+
 ## Output Format & File Layout
 
 ### Directory structure

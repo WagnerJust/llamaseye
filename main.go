@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/WagnerJust/llamaseye/bench"
 	"github.com/WagnerJust/llamaseye/cmd"
@@ -130,10 +132,16 @@ func run(args []string) error {
 		Executor: bench.OSExecutor{},
 	}
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	var swept []string
 	for _, modelPath := range models {
 		if err := s.SweepModel(ctx, modelPath); err != nil {
+			if ctx.Err() != nil {
+				logger.Log("Interrupted — saving state and exiting")
+				break
+			}
 			logger.Warn("sweep failed for %s: %v", modelPath, err)
 			continue
 		}

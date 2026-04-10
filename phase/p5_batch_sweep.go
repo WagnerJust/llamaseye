@@ -72,7 +72,7 @@ func (P5BatchSweep) Run(ctx context.Context, env *PhaseEnv) error {
 		}
 
 		label := fmt.Sprintf("phase5/b=%d_ub=%d", pair.B, pair.UB)
-		status, _, pp := RecordAndTrack(env, label, bench.RunParams{
+		status, _, pp := RecordAndTrack(ctx, env, label, bench.RunParams{
 			NGL:        env.Best.NGL,
 			FA:         env.Best.FA,
 			CTK:        env.Best.CTK,

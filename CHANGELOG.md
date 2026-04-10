@@ -15,6 +15,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - `.github/ISSUE_TEMPLATE/` with bug report and feature request templates.
 - `.github/pull_request_template.md` with doc-update checklist.
 - `Makefile` with `build`, `test`, `vet`, `lint`, and `clean` targets.
+- **Graceful shutdown on SIGINT/SIGTERM** — pressing Ctrl-C now cancels the in-flight benchmark, saves `state.json`, and exits cleanly. Use `--resume` to continue from where it stopped.
+- Context propagation through the full call chain: `main.go` → `SweepModel` → `Phase.Run` → `RecordAndTrack` → `WaitCool` + `RunBench`. All `ctx.Done()` checks in phase loops are now functional.
+- `RunBench` accepts a parent `context.Context`, allowing in-flight subprocesses to be cancelled on signal.
+- `WaitCool` now respects the caller's context instead of using a detached `context.Background()`.
 
 ### Fixed
 - Thermal monitor on Linux: shell pipeline commands (containing `|`, `>`, `<`) are now dispatched via `sh -c` instead of `strings.Fields` splitting. Previously, `sensors ... | awk ...` was passed as literal arguments to `sensors`, making the thermal guard a silent no-op on Linux AMD/Intel hardware.

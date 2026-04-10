@@ -71,7 +71,7 @@ func (P1NGLSweep) Run(ctx context.Context, env *PhaseEnv) error {
 			continue
 		}
 
-		status, tg, _ := RecordAndTrack(env, fmt.Sprintf("phase1/ngl=%d", ngl), bench.RunParams{
+		status, tg, _ := RecordAndTrack(ctx, env, fmt.Sprintf("phase1/ngl=%d", ngl), bench.RunParams{
 			NGL:        ngl,
 			FA:         0,
 			CTK:        "f16",

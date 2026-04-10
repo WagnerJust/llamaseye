@@ -119,7 +119,7 @@ func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
 	kvOrder []string, bestCTKIdx, bestCTVIdx int) string {
 
 	// Primary config
-	status, _, _ := RecordAndTrack(env, fmt.Sprintf("phase6/ctx=%d", ctxVal), bench.RunParams{
+	status, _, _ := RecordAndTrack(ctx, env, fmt.Sprintf("phase6/ctx=%d", ctxVal), bench.RunParams{
 		NGL:        env.Best.NGL,
 		FA:         env.Best.FA,
 		CTK:        env.Best.CTK,
@@ -223,7 +223,7 @@ func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
 		}
 
 		label := fmt.Sprintf("phase6/ctx=%d/nkvo=%d_ctk=%s_ctv=%s", ctxVal, fb.NKVO, fb.CTK, fb.CTV)
-		fbStatus, _, _ := RecordAndTrack(env, label, bench.RunParams{
+		fbStatus, _, _ := RecordAndTrack(ctx, env, label, bench.RunParams{
 			NGL:        env.Best.NGL,
 			FA:         fb.FA,
 			CTK:        fb.CTK,
