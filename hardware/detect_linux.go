@@ -134,7 +134,8 @@ func linuxRAM() (total, free int) {
 func linuxCPUTempCmd() string {
 	if !isCommandAvailable("sensors") {
 		if _, err := os.Stat("/sys/class/thermal/thermal_zone0/temp"); err == nil {
-			return "cat /sys/class/thermal/thermal_zone0/temp"
+			// sysfs returns millidegrees — awk converts: 45000 → 45
+			return "awk '{printf \"%d\", $1/1000}' /sys/class/thermal/thermal_zone0/temp"
 		}
 		return ""
 	}

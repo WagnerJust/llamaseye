@@ -938,6 +938,12 @@ function wait_cool():
         sleep SWEEP_COOL_POLL_SEC
 ```
 
+Temperature commands are stored as shell strings (e.g., `sensors | awk ...`).
+`readTemp` detects shell operators (`|`, `>`, `<`) and dispatches those via
+`sh -c`; simple single-command strings are run directly via `exec.Command`.
+The sysfs fallback (`/sys/class/thermal/thermal_zone0/temp`) uses `awk` to
+convert millidegrees to degrees.
+
 Thresholds are intentionally 2 °C below the hard limits (90 °C / 83 °C) so
 cooling begins before hitting the limit, not at it.
 
