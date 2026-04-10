@@ -6,6 +6,14 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.7.2] — 2026-04-09
+
+### Added
+- CI pipeline (`ci.yml`): runs `go vet` and `go test -race` on every push/PR, plus `golangci-lint` for static analysis.
+- Release workflow now runs `go test` before building binaries.
+
+---
+
 ## [1.7.1] — 2026-04-09
 
 ### Fixed
