@@ -97,7 +97,7 @@ func loadJSONL(path string) ([]*record, error) {
 // GenerateMarkdown writes sweep.md from sweep.jsonl in outputDir.
 // goalSpec is the raw --goal string (may be empty).
 // goalSort controls the sort key for the Goal Results table: "tg"|"ctx"|"ngl"|"pp".
-func GenerateMarkdown(outputDir, modelStem, goalSpec, goalSort string, timeoutSec int) error {
+func GenerateMarkdown(outputDir, modelStem, goalSpec, goalSort string, timeoutSec int) (err error) {
 	jsonlPath := filepath.Join(outputDir, "sweep.jsonl")
 	if _, err := os.Stat(jsonlPath); os.IsNotExist(err) {
 		return nil
@@ -116,7 +116,11 @@ func GenerateMarkdown(outputDir, modelStem, goalSpec, goalSort string, timeoutSe
 	defer f.Close()
 
 	w := bufio.NewWriter(f)
-	defer w.Flush()
+	defer func() {
+		if ferr := w.Flush(); ferr != nil && err == nil {
+			err = ferr
+		}
+	}()
 
 	fmt.Fprintf(w, "# Sweep Results: %s\n\n", modelStem)
 	fmt.Fprintf(w, "Generated: %s\n\n", time.Now().UTC().Format("2006-01-02T15:04:05Z"))
@@ -299,7 +303,7 @@ func GenerateMarkdown(outputDir, modelStem, goalSpec, goalSort string, timeoutSe
 }
 
 // GenerateCrossModelSummary writes summary.md comparing results across model subdirs.
-func GenerateCrossModelSummary(outputDir string, stems []string) error {
+func GenerateCrossModelSummary(outputDir string, stems []string) (err error) {
 	if len(stems) < 2 {
 		return nil
 	}
@@ -357,7 +361,11 @@ func GenerateCrossModelSummary(outputDir string, stems []string) error {
 	defer f.Close()
 
 	w := bufio.NewWriter(f)
-	defer w.Flush()
+	defer func() {
+		if ferr := w.Flush(); ferr != nil && err == nil {
+			err = ferr
+		}
+	}()
 
 	fmt.Fprintln(w, "# Multi-Model Sweep Summary")
 	fmt.Fprintln(w)
