@@ -15,6 +15,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Thermal monitor on Linux: shell pipeline commands (containing `|`, `>`, `<`) are now dispatched via `sh -c` instead of `strings.Fields` splitting. Previously, `sensors ... | awk ...` was passed as literal arguments to `sensors`, making the thermal guard a silent no-op on Linux AMD/Intel hardware.
 - Sysfs fallback (`/sys/class/thermal/thermal_zone0/temp`) now divides by 1000 to convert millidegrees to degrees Celsius.
+- GGUF parser: added upper-bound checks on key length (64 KiB), string length (1 MiB), and array length (1M elements) before allocating. A malformed `.gguf` file can no longer exhaust RAM via oversized `make()` calls.
 
 ---
 

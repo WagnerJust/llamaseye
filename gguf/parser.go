@@ -8,6 +8,13 @@ import (
 	"os"
 )
 
+// Safety limits to prevent OOM from malformed GGUF files.
+const (
+	maxGGUFKeyLen    = 1 << 16 // 64 KiB — longest observed GGUF key is ~100 bytes
+	maxGGUFStringLen = 1 << 20 // 1 MiB — longest string value
+	maxGGUFArrayLen  = 1 << 20 // 1 M elements
+)
+
 const (
 	ggufMagic   = 0x46554747 // "GGUF"
 	typeUINT8   = 0
@@ -192,6 +199,9 @@ func readKV(r io.Reader) (string, any, error) {
 	if err != nil {
 		return "", nil, err
 	}
+	if kLen > maxGGUFKeyLen {
+		return "", nil, fmt.Errorf("GGUF key length %d exceeds limit %d", kLen, maxGGUFKeyLen)
+	}
 	keyBytes := make([]byte, kLen)
 	if _, err := io.ReadFull(r, keyBytes); err != nil {
 		return "", nil, err
@@ -248,6 +258,9 @@ func readValue(r io.Reader, vtype uint32) (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		if sLen > maxGGUFStringLen {
+			return nil, fmt.Errorf("GGUF string length %d exceeds limit %d", sLen, maxGGUFStringLen)
+		}
 		buf := make([]byte, sLen)
 		if _, err := io.ReadFull(r, buf); err != nil {
 			return nil, err
@@ -261,6 +274,9 @@ func readValue(r io.Reader, vtype uint32) (any, error) {
 		aLen, err := readU64(r)
 		if err != nil {
 			return nil, err
+		}
+		if aLen > maxGGUFArrayLen {
+			return nil, fmt.Errorf("GGUF array length %d exceeds limit %d", aLen, maxGGUFArrayLen)
 		}
 		elems := make([]any, aLen)
 		for i := uint64(0); i < aLen; i++ {
