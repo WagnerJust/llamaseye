@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+func intPtr(n int) *int { return &n }
+
 func TestRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	threads := 8
@@ -37,7 +39,7 @@ func TestRoundTrip(t *testing.T) {
 				{B: 2048, UB: 512},
 				{B: 1024, UB: 256},
 			},
-			ThreadValues: []any{float64(4), float64(8), "system_default"},
+			ThreadValues: ThreadValues{intPtr(4), intPtr(8), nil},
 		},
 	}
 
@@ -217,6 +219,35 @@ func TestDefaultBest(t *testing.T) {
 	}
 }
 
+func TestThreadValues_JSON(t *testing.T) {
+	orig := ThreadValues{intPtr(4), nil, intPtr(8)}
+	data, err := orig.MarshalJSON()
+	if err != nil {
+		t.Fatalf("MarshalJSON: %v", err)
+	}
+	// Should produce [4,"system_default",8]
+	want := `[4,"system_default",8]`
+	if string(data) != want {
+		t.Errorf("MarshalJSON = %s, want %s", data, want)
+	}
+
+	var loaded ThreadValues
+	if err := loaded.UnmarshalJSON(data); err != nil {
+		t.Fatalf("UnmarshalJSON: %v", err)
+	}
+	if len(loaded) != 3 {
+		t.Fatalf("len = %d, want 3", len(loaded))
+	}
+	if loaded[0] == nil || *loaded[0] != 4 {
+		t.Errorf("[0] = %v, want 4", loaded[0])
+	}
+	if loaded[1] != nil {
+		t.Errorf("[1] = %v, want nil (system_default)", loaded[1])
+	}
+	if loaded[2] == nil || *loaded[2] != 8 {
+		t.Errorf("[2] = %v, want 8", loaded[2])
+	}
+}
 
 func TestLoad_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()

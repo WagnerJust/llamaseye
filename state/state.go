@@ -3,6 +3,7 @@ package state
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -33,13 +34,52 @@ type BUBCombo struct {
 	UB int `json:"ub"`
 }
 
+// ThreadValues is a JSON-compatible list of thread counts where nil means
+// "system_default" (no -t flag). JSON representation: [4, 8, "system_default"].
+type ThreadValues []*int
+
+func (tv ThreadValues) MarshalJSON() ([]byte, error) {
+	raw := make([]any, len(tv))
+	for i, v := range tv {
+		if v == nil {
+			raw[i] = "system_default"
+		} else {
+			raw[i] = *v
+		}
+	}
+	return json.Marshal(raw)
+}
+
+func (tv *ThreadValues) UnmarshalJSON(data []byte) error {
+	var raw []any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	result := make(ThreadValues, 0, len(raw))
+	for _, v := range raw {
+		switch val := v.(type) {
+		case string:
+			if val == "system_default" {
+				result = append(result, nil)
+			}
+		case float64:
+			n := int(val)
+			result = append(result, &n)
+		default:
+			return fmt.Errorf("unexpected thread value type %T", v)
+		}
+	}
+	*tv = result
+	return nil
+}
+
 // WorkingSets holds the accumulated output of each sweep phase.
 type WorkingSets struct {
 	NGL          []int        `json:"ngl"`
 	FACTKCombos  []FACTKCombo `json:"fa_ctk_combos"`
 	CTKValues    []string     `json:"ctk_values"`    // independent CTK axis for Phase 7
 	CTVValues    []string     `json:"ctv_values"`    // independent CTV axis for Phase 7
-	ThreadValues []any        `json:"thread_values"` // int or "system_default"
+	ThreadValues ThreadValues `json:"thread_values"`
 	NKVOValues   []int        `json:"nkvo_values"`
 	BUBCombos    []BUBCombo   `json:"b_ub_combos"`
 	CTXValues    []int        `json:"ctx_values"`

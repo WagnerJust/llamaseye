@@ -149,14 +149,7 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 								default:
 								}
 
-								var threads *int
-								switch t := threadVal.(type) {
-								case int:
-									tc := t
-									threads = &tc
-								}
-
-								p7Key := output.ComboKey(7, ngl, fa, ctk, ctv, nkvo, threads, bub.B, bub.UB, ctxVal)
+								p7Key := output.ComboKey(7, ngl, fa, ctk, ctv, nkvo, threadVal, bub.B, bub.UB, ctxVal)
 								if _, skip := ShouldSkip(env, 7, p7Key); skip {
 									skipCount++
 									continue
@@ -171,7 +164,7 @@ func (p P7CombinationMatrix) Run(ctx context.Context, env *PhaseEnv) error {
 									CTK:        ctk,
 									CTV:        ctv,
 									NKVO:       nkvo,
-									Threads:    threads,
+									Threads:    threadVal,
 									B:          bub.B,
 									UB:         bub.UB,
 									NPrompt:    ctxVal,
@@ -344,23 +337,14 @@ func filterBUBByMinB(bubs []state.BUBCombo, minB *int) []state.BUBCombo {
 	return result
 }
 
-func filterThreadsByMin(threads []any, minThreads *int) []any {
+func filterThreadsByMin(threads state.ThreadValues, minThreads *int) state.ThreadValues {
 	if minThreads == nil {
 		return threads
 	}
-	var result []any
+	var result state.ThreadValues
 	for _, v := range threads {
-		switch t := v.(type) {
-		case int:
-			if t >= *minThreads {
-				result = append(result, v)
-			}
-		case float64:
-			if int(t) >= *minThreads {
-				result = append(result, v)
-			}
-		case string:
-			result = append(result, v) // "system_default" always passes
+		if v == nil || *v >= *minThreads {
+			result = append(result, v)
 		}
 	}
 	return result
