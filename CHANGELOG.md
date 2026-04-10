@@ -12,6 +12,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - CI pipeline (`ci.yml`): runs `go vet` and `go test -race` on every push/PR, plus `golangci-lint` for static analysis.
 - Release workflow now runs `go test` before building binaries.
 
+### Fixed
+- Thermal monitor on Linux: shell pipeline commands (containing `|`, `>`, `<`) are now dispatched via `sh -c` instead of `strings.Fields` splitting. Previously, `sensors ... | awk ...` was passed as literal arguments to `sensors`, making the thermal guard a silent no-op on Linux AMD/Intel hardware.
+- Sysfs fallback (`/sys/class/thermal/thermal_zone0/temp`) now divides by 1000 to convert millidegrees to degrees Celsius.
+
 ---
 
 ## [1.7.1] — 2026-04-09

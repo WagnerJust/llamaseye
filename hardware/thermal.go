@@ -57,27 +57,44 @@ func (tm *ThermalMonitor) WaitCool(ctx context.Context) {
 
 // readTemp runs a temp command and returns the integer °C value.
 // Returns 0 if the command is empty or fails.
+// Commands containing shell operators (|, >, <) are dispatched via "sh -c".
 func (tm *ThermalMonitor) readTemp(cmdStr string) int {
 	if cmdStr == "" {
 		return 0
 	}
-	// For simple single-word commands like "osx-cpu-temp"
-	parts := strings.Fields(cmdStr)
-	if len(parts) == 0 {
-		return 0
+
+	var out []byte
+	var err error
+
+	// Detect shell pipeline/redirection — must run via sh -c
+	if strings.ContainsAny(cmdStr, "|><") {
+		out, err = exec.Command("sh", "-c", cmdStr).Output()
+	} else {
+		parts := strings.Fields(cmdStr)
+		if len(parts) == 0 {
+			return 0
+		}
+		out, err = exec.Command(parts[0], parts[1:]...).Output()
 	}
-	out, err := exec.Command(parts[0], parts[1:]...).Output()
 	if err != nil {
 		return 0
 	}
+
 	// Extract first integer from output
 	s := strings.TrimSpace(string(out))
+	if s == "" {
+		return 0
+	}
 	// Some outputs have decimals; take integer part
 	if idx := strings.IndexByte(s, '.'); idx >= 0 {
 		s = s[:idx]
 	}
 	// Take first whitespace-delimited token
-	s = strings.Fields(s)[0]
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return 0
+	}
+	s = fields[0]
 	n, _ := strconv.Atoi(s)
 	return n
 }
