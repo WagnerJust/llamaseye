@@ -31,6 +31,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - `bufio.Writer.Flush()` errors in `GenerateMarkdown` and `GenerateCrossModelSummary` are now captured via named return values instead of silently dropped by `defer w.Flush()`.
 - Fixed unchecked `fmt.Sscanf` and `fmt.Scan` return values flagged by `errcheck` linter.
 - Simplified `jsonlParamsJSON` struct literal to direct type conversion (`gosimple S1016`).
+- `parseOptInt` now returns an error on invalid integer values (e.g., `--start-ngl abc`) instead of silently treating them as unset. The sweep fails fast with a clear error message.
 
 ### Removed
 - Dead code cleanup: removed `ParseThreadValues`, `ThreadValuesToAny`, `maxFloat`, `formatError`, `containsStr`, `binaryLabel` suppression, unused `axis` parameter from `ApplyPhase7MinsInt`, unused second parameter from `printHardwareSummary`, and `cmd.ParsePhaseList` re-export.

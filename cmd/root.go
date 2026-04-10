@@ -119,17 +119,32 @@ func Parse(args []string, version string) (*config.Config, []string, error) {
 	if skipPhases != "" {
 		cfg.SkipPhases = config.ParsePhaseList(skipPhases)
 	}
-	cfg.StartNGL = parseOptInt(startNGL)
-	cfg.StartThreads = parseOptInt(startThreads)
-	cfg.StartCtx = parseOptInt(startCtx)
-	cfg.StartB = parseOptInt(startB)
-	cfg.StartUB = parseOptInt(startUB)
-	cfg.StartFA = parseOptInt(startFA)
-	cfg.MinNGL = parseOptInt(minNGL)
-	cfg.MinThreads = parseOptInt(minThreads)
-	cfg.MinCtx = parseOptInt(minCtx)
-	cfg.MinB = parseOptInt(minB)
-	cfg.MinUB = parseOptInt(minUB)
+
+	// Parse integer flags — fail fast on invalid values
+	intFlags := []struct {
+		name string
+		src  string
+		dst  **int
+	}{
+		{"--start-ngl", startNGL, &cfg.StartNGL},
+		{"--start-threads", startThreads, &cfg.StartThreads},
+		{"--start-ctx", startCtx, &cfg.StartCtx},
+		{"--start-b", startB, &cfg.StartB},
+		{"--start-ub", startUB, &cfg.StartUB},
+		{"--start-fa", startFA, &cfg.StartFA},
+		{"--min-ngl", minNGL, &cfg.MinNGL},
+		{"--min-threads", minThreads, &cfg.MinThreads},
+		{"--min-ctx", minCtx, &cfg.MinCtx},
+		{"--min-b", minB, &cfg.MinB},
+		{"--min-ub", minUB, &cfg.MinUB},
+	}
+	for _, f := range intFlags {
+		v, err := parseOptInt(f.src)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", f.name, err)
+		}
+		*f.dst = v
+	}
 
 	// Build model list from --model flag
 	var models []string
@@ -221,16 +236,16 @@ func validateModel(path string) error {
 	return nil
 }
 
-func parseOptInt(s string) *int {
+func parseOptInt(s string) (*int, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return nil
+		return nil, nil
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("invalid integer value %q: %w", s, err)
 	}
-	return &n
+	return &n, nil
 }
 
 
