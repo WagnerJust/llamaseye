@@ -104,7 +104,7 @@ results/<model-stem>/
 
 ### TurboQuant binary
 
-When `--turbo-bench <path>` is passed, runs using `turbo2`/`turbo3`/`turbo4` KV types are dispatched to that binary; all other runs use the standard binary. The turbo binary is built from the `feature/turboquant-kv-cache` branch of `github.com/TheTom/llama-cpp-turboquant`. Verified at startup by checking `--help` output contains "turbo3". Invalid path = silently disabled.
+When `--turbo-bench <path>` is passed, runs using `turbo2`/`turbo3`/`turbo4` KV types are dispatched to that binary; all other runs use the standard binary. The turbo binary is built from the `feature/turboquant-kv-cache` branch of `github.com/TheTom/llama-cpp-turboquant`. Verified at startup by running `<binary> --help` and checking the output contains "turbo3". The same mechanism validates `--rotor-bench` using "planar3" as the marker. Invalid or non-matching path = silently disabled.
 
 ### Flag/env var convention
 

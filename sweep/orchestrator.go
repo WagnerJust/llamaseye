@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -57,9 +58,9 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 	sel := &bench.BinarySelector{
 		StandardBin:    s.Config.LlamaBenchBin,
 		TurboBin:       s.Config.TurboBenchBin,
-		TurboAvailable: s.Config.TurboBenchBin != "" && detectTurbo(s.Config.TurboBenchBin),
+		TurboAvailable: s.Config.TurboBenchBin != "" && validateBenchBinary(s.Config.TurboBenchBin, "turbo3"),
 		RotorBin:       s.Config.RotorBenchBin,
-		RotorAvailable: s.Config.RotorBenchBin != "" && detectTurbo(s.Config.RotorBenchBin),
+		RotorAvailable: s.Config.RotorBenchBin != "" && validateBenchBinary(s.Config.RotorBenchBin, "planar3"),
 	}
 	runner := &bench.BenchRunner{
 		Config:    s.Config,
@@ -280,19 +281,21 @@ func parseGoal(spec string, hits int) *phase.GoalConfig {
 	return g
 }
 
-func detectTurbo(path string) bool {
+// validateBenchBinary checks that path is an executable file whose --help
+// output contains marker (e.g. "turbo3" for TurboQuant, "planar3" for RotorQuant).
+func validateBenchBinary(path, marker string) bool {
 	if path == "" {
 		return false
 	}
-	if _, err := os.Stat(path); err != nil {
-		return false
-	}
-	// Check executable
 	info, err := os.Stat(path)
 	if err != nil || info.Mode()&0111 == 0 {
 		return false
 	}
-	return true
+	out, err := exec.Command(path, "--help").CombinedOutput()
+	if err != nil {
+		// --help may exit non-zero on some builds; check output anyway.
+	}
+	return strings.Contains(string(out), marker)
 }
 
 func printSummary(logger *output.Logger, env *phase.PhaseEnv) {

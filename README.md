@@ -129,7 +129,7 @@ cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --target llama-bench -j$(nproc)
 ```
 
-llamaseye verifies the binary at startup by probing it with `-ctk turbo3`. If the flag is accepted, turbo types are enabled. If the path is missing or the flag is rejected, turbo types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — the script handles an invalid path gracefully.
+llamaseye verifies the binary at startup by running `<binary> --help` and checking for the `turbo3` marker in the output. If the marker is present, turbo types are enabled. If the path is missing, not executable, or the marker is absent, turbo types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — llamaseye handles an invalid path gracefully.
 
 ### Optional: RotorQuant llama-bench
 
@@ -355,7 +355,7 @@ Passing `--turbo-bench <path>` enables three additional KV cache quantisation ty
 | `turbo3` | ~4.3× | Yes (auto-enabled) |
 | `turbo4` | ~3.2× | Yes (auto-enabled) |
 
-The TurboQuant binary is verified at startup by probing it with `-ctk turbo3`. If the flag is accepted, turbo types are enabled. If the path is missing or the flag is rejected, turbo types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — the script handles an invalid path gracefully.
+The TurboQuant binary is verified at startup by running `<binary> --help` and checking for the `turbo3` marker in the output. If the marker is present, turbo types are enabled. If the path is missing, not executable, or the marker is absent, turbo types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — llamaseye handles an invalid path gracefully.
 
 When `--turbo-bench` is available, Phase 2 also tests **asymmetric K/V combinations** (e.g. `ctk=q8_0, ctv=turbo3`) by default. TurboQuant research shows that V cache compression is effectively free — compressing V has near-zero effect on attention quality — while all quality degradation comes from K compression. Asymmetric combos capture the best of both: high K precision with aggressive V compression. Use `--no-asymmetric-kv` to restrict Phase 2 to symmetric pairs only.
 

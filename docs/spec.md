@@ -1389,7 +1389,9 @@ Hardware / environment:
                              Phase 2 and Phase 7. Must be built from:
                              github.com/TheTom/llama-cpp-turboquant
                              branch: feature/turboquant-kv-cache
-                             Verified at startup — silently disabled if invalid.
+                             Verified at startup by running --help and checking
+                             for the "turbo3" marker — silently disabled if
+                             the marker is absent or the binary is invalid.
   --cpu-temp-limit <n>       °C above which sweep pauses. Default: 88.
   --gpu-temp-limit <n>       °C above which sweep pauses. Default: 81.
   --no-thermal-guard         Disable wait_cool() entirely (not recommended).

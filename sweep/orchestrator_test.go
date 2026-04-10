@@ -326,15 +326,22 @@ func TestParseGoal_PartialSpec(t *testing.T) {
 	}
 }
 
-func TestDetectTurbo_EmptyPath(t *testing.T) {
-	if detectTurbo("") {
-		t.Error("detectTurbo('') should return false")
+func TestValidateBenchBinary_EmptyPath(t *testing.T) {
+	if validateBenchBinary("", "turbo3") {
+		t.Error("validateBenchBinary('', 'turbo3') should return false")
 	}
 }
 
-func TestDetectTurbo_NonExistentPath(t *testing.T) {
-	if detectTurbo("/nonexistent/turbo-bench") {
-		t.Error("detectTurbo with nonexistent path should return false")
+func TestValidateBenchBinary_NonExistentPath(t *testing.T) {
+	if validateBenchBinary("/nonexistent/turbo-bench", "turbo3") {
+		t.Error("validateBenchBinary with nonexistent path should return false")
+	}
+}
+
+func TestValidateBenchBinary_MissingMarker(t *testing.T) {
+	// Use a real executable that won't have "turbo3" in its --help output.
+	if validateBenchBinary("/bin/echo", "turbo3") {
+		t.Error("validateBenchBinary should return false when marker is absent from --help output")
 	}
 }
 
