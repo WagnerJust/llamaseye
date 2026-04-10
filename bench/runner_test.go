@@ -284,8 +284,8 @@ func TestRunBench_TurboUnavailable(t *testing.T) {
 
 	// turbo type with unavailable turbo binary should error or return error status
 	res, err := r.RunBench(context.Background(), "test-turbo", RunParams{CTK: "turbo3", CTV: "f16", NGL: 20, B: 2048, UB: 512, NPrompt: 512, NGen: 128, Reps: 1})
-	if err == nil && (res == nil || res.Status != StatusError) {
-		t.Error("expected error or error status for turbo with unavailable binary")
+	if err == nil {
+		t.Errorf("expected error for turbo with unavailable binary, got status=%s", res.Status)
 	}
 }
 

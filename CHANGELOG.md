@@ -11,6 +11,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 ### Added
 - CI pipeline (`ci.yml`): runs `go vet` and `go test -race` on every push/PR, plus `golangci-lint` for static analysis.
 - Release workflow now runs `go test` before building binaries.
@@ -46,6 +47,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Removed
 - Dead code cleanup: removed `ParseThreadValues`, `ThreadValuesToAny`, `maxFloat`, `formatError`, `containsStr`, `binaryLabel` suppression, unused `axis` parameter from `ApplyPhase7MinsInt`, unused second parameter from `printHardwareSummary`, and `cmd.ParsePhaseList` re-export.
 - Removed suppressed viability computation (`MinTGTS` check that was computed and discarded with `_ = v`).
+
+### Tests
+- Fixed inverted assertion in `TestRunBench_TurboUnavailable` — test was passing vacuously due to `&&` condition that was always false.
+- Added actual assertion on execution count in `TestP7CombinationMatrix_GoalEarlyExit` — goal early-exit behavior was previously untested.
+- `cmd/root_test.go` with tests for `parseOptInt`, `ResolveModels`, `resolveModelsDir`, and `resolveModelList`.
+- `hardware/detect_test.go` with smoke test for `Detect()` asserting positive CPU/RAM values.
 
 ---
 
