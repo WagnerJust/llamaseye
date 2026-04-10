@@ -83,20 +83,7 @@ func AppendRecord(outputDir, modelPath, modelStem string,
 		PhaseLabel: phaseLabel,
 		Binary:     binaryLabel,
 		Status:     string(result.Status),
-		Params: jsonlParamsJSON{
-			NGL:              p.NGL,
-			FA:               p.FA,
-			CTK:              p.CTK,
-			CTV:              p.CTV,
-			NKVO:             p.NKVO,
-			Threads:          p.Threads,
-			ThreadsIsDefault: p.ThreadsIsDefault,
-			B:                p.B,
-			UB:               p.UB,
-			NPrompt:          p.NPrompt,
-			NGen:             p.NGen,
-			Repetitions:      p.Repetitions,
-		},
+		Params: jsonlParamsJSON(p),
 	}
 
 	// Viable

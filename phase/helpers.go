@@ -1,7 +1,6 @@
 package phase
 
 import (
-	"fmt"
 	"strconv"
 )
 
@@ -54,13 +53,3 @@ func containsInt(slice []int, v int) bool {
 	return false
 }
 
-// maxFloat returns the larger of a and b.
-func maxFloat(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-// formatError wraps fmt.Errorf for use in phase files.
-var formatError = fmt.Errorf

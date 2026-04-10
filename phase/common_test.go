@@ -80,7 +80,7 @@ func TestApplyAxisOptsInt_Nil(t *testing.T) {
 func TestApplyPhase7MinsInt(t *testing.T) {
 	values := []int{0, 4, 8, 12, 16, 20}
 	min := 8
-	result := ApplyPhase7MinsInt("ngl", values, &min, nil)
+	result := ApplyPhase7MinsInt(values, &min, nil)
 	for _, v := range result {
 		if v < 8 {
 			t.Errorf("value %d below min=8", v)
@@ -93,7 +93,7 @@ func TestApplyPhase7MinsInt(t *testing.T) {
 
 func TestApplyPhase7MinsInt_Nil(t *testing.T) {
 	values := []int{1, 2, 3}
-	result := ApplyPhase7MinsInt("ngl", values, nil, nil)
+	result := ApplyPhase7MinsInt(values, nil, nil)
 	if len(result) != 3 {
 		t.Errorf("nil min: expected 3, got %d", len(result))
 	}

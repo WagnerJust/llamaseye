@@ -233,8 +233,4 @@ func parseOptInt(s string) *int {
 	return &n
 }
 
-// ParsePhaseList is exported for use from config package.
-func ParsePhaseList(s string) []int {
-	return config.ParsePhaseList(s)
-}
 

@@ -112,14 +112,14 @@ func run(args []string) error {
 		return fmt.Errorf("llama-bench not found: %s", cfg.LlamaBenchBin)
 	}
 
-	printHardwareSummary(hw, cfg)
+	printHardwareSummary(hw)
 
 	// Pre-sweep confirmation
 	if !cfg.NoConfirm && !cfg.DryRun {
 		fmt.Printf("\nReady to sweep %d model(s). Output -> %s\n", len(models), cfg.OutputDir)
 		fmt.Print("Continue? [y/N] ")
 		var reply string
-		fmt.Scan(&reply)
+		_, _ = fmt.Scan(&reply)
 		if !strings.EqualFold(reply, "y") {
 			return fmt.Errorf("aborted by user")
 		}
@@ -183,7 +183,7 @@ func stemOf(path string) string {
 	return strings.TrimSuffix(base, ".gguf")
 }
 
-func printHardwareSummary(hw *hardware.HardwareInfo, _ interface{}) {
+func printHardwareSummary(hw *hardware.HardwareInfo) {
 	fmt.Println()
 	fmt.Println("┌─────────────────────────────────────────────────────┐")
 	fmt.Println("│  Hardware Summary                                   │")

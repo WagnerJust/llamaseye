@@ -62,7 +62,7 @@ type llamaBenchLine struct {
 // The provided ctx is used as the parent for the per-run timeout, allowing
 // callers to cancel in-flight benchmarks (e.g. on SIGINT).
 func (r *BenchRunner) RunBench(ctx context.Context, label string, p RunParams) (*RunResult, error) {
-	binary, binaryLabel, err := r.Selector.Select(p.CTK, p.CTV)
+	binary, _, err := r.Selector.Select(p.CTK, p.CTV)
 	if err != nil {
 		return nil, err
 	}
@@ -94,8 +94,6 @@ func (r *BenchRunner) RunBench(ctx context.Context, label string, p RunParams) (
 		"-o", "jsonl",
 		"--prio", strconv.Itoa(r.Config.Priority),
 	)
-
-	_ = binaryLabel // used in JSONL record construction (output package)
 
 	if r.Logger != nil {
 		r.Logger.Debugf("cmd: %s %s (threads=%s)", binary, strings.Join(args, " "), threadsDisplay)

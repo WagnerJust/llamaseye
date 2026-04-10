@@ -217,24 +217,6 @@ func TestDefaultBest(t *testing.T) {
 	}
 }
 
-func TestParseThreadValues(t *testing.T) {
-	input := []any{"system_default", 8, 16}
-	result := ParseThreadValues(input)
-	if len(result) != 3 {
-		t.Errorf("ParseThreadValues len = %d, want 3", len(result))
-	}
-	if result[0] != "system_default" {
-		t.Errorf("result[0] = %v, want system_default", result[0])
-	}
-}
-
-func TestThreadValuesToAny(t *testing.T) {
-	input := []any{8, "system_default", 16}
-	result := ThreadValuesToAny(input)
-	if len(result) != 3 {
-		t.Errorf("ThreadValuesToAny len = %d, want 3", len(result))
-	}
-}
 
 func TestLoad_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()

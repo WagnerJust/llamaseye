@@ -118,14 +118,3 @@ func (s *State) MarkPhaseComplete(phase int) {
 	}
 }
 
-// ThreadValues returns the thread working set as a mix of ints and "system_default".
-// In the JSON schema, thread_values is an array that may contain the string
-// "system_default" or integer values. We store them as []any.
-func ParseThreadValues(raw []any) []any {
-	return raw
-}
-
-// ThreadValuesToAny converts a list of thread values (ints + system_default) for JSON.
-func ThreadValuesToAny(values []any) []any {
-	return values
-}
