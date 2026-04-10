@@ -69,8 +69,51 @@ type jsonlResult struct {
 	StddevTS float64 `json:"stddev_ts"`
 }
 
+// JSONLWriter holds an open file handle for writing sweep.jsonl records.
+// Call Close when the sweep is complete.
+type JSONLWriter struct {
+	f *os.File
+}
+
+// NewJSONLWriter opens (or creates) sweep.jsonl in outputDir for append.
+func NewJSONLWriter(outputDir string) (*JSONLWriter, error) {
+	f, err := os.OpenFile(filepath.Join(outputDir, "sweep.jsonl"),
+		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+	return &JSONLWriter{f: f}, nil
+}
+
+// Close flushes and closes the underlying file.
+func (w *JSONLWriter) Close() error {
+	return w.f.Close()
+}
+
+// WriteRecord constructs and writes one JSON line to the open file.
+func (w *JSONLWriter) WriteRecord(modelPath, modelStem string,
+	p JSONLParams, result *bench.RunResult,
+	phase int, phaseLabel, binaryLabel string) error {
+	return writeJSONLRecord(w.f, modelPath, modelStem, p, result, phase, phaseLabel, binaryLabel)
+}
+
 // AppendRecord constructs and appends one JSON line to outputDir/sweep.jsonl.
+// Deprecated: prefer JSONLWriter for batch writes; this opens and closes the file per call.
 func AppendRecord(outputDir, modelPath, modelStem string,
+	p JSONLParams, result *bench.RunResult,
+	phase int, phaseLabel, binaryLabel string) error {
+
+	f, err := os.OpenFile(filepath.Join(outputDir, "sweep.jsonl"),
+		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return writeJSONLRecord(f, modelPath, modelStem, p, result, phase, phaseLabel, binaryLabel)
+}
+
+// writeJSONLRecord constructs one JSON line and writes it to w.
+func writeJSONLRecord(w *os.File, modelPath, modelStem string,
 	p JSONLParams, result *bench.RunResult,
 	phase int, phaseLabel, binaryLabel string) error {
 
@@ -88,7 +131,7 @@ func AppendRecord(outputDir, modelPath, modelStem string,
 
 	// Viable
 	if result.Status == bench.StatusOK && p.NGen > 0 {
-		v := bench.TGSpeed(result.Results) >= 2.0 // will be overridden by caller if needed
+		v := bench.TGSpeed(result.Results) >= 2.0
 		rec.Viable = &v
 	}
 
@@ -107,13 +150,13 @@ func AppendRecord(outputDir, modelPath, modelStem string,
 		rec.Results = append(rec.Results, jr)
 	}
 	if rec.Results == nil {
-		rec.Results = []jsonlResult{} // always emit array, not null
+		rec.Results = []jsonlResult{}
 	}
 
 	// Wall time
 	if result.WallTimeSec > 0 {
-		w := result.WallTimeSec
-		rec.WallTimeSec = &w
+		wt := result.WallTimeSec
+		rec.WallTimeSec = &wt
 	}
 
 	// Raw output file
@@ -128,20 +171,12 @@ func AppendRecord(outputDir, modelPath, modelStem string,
 		rec.ErrorSnippet = &e
 	}
 
-	// Append to sweep.jsonl
 	line, err := json.Marshal(rec)
 	if err != nil {
 		return err
 	}
 	line = append(line, '\n')
-
-	f, err := os.OpenFile(filepath.Join(outputDir, "sweep.jsonl"),
-		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.Write(line)
+	_, err = w.Write(line)
 	return err
 }
 

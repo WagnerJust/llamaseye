@@ -45,18 +45,19 @@ type WorkingSets struct {
 
 // PhaseEnv is the shared mutable state passed to every phase.
 type PhaseEnv struct {
-	Config     *config.Config
-	HW         *hardware.HardwareInfo
-	Runner     *bench.BenchRunner
-	Thermal    *hardware.ThermalMonitor
-	Logger     *output.Logger
-	MaxNGL     int
-	NumLayers  int // model layer count from GGUF metadata; 0 = unknown
-	Best       BestConfig
-	WS         WorkingSets
-	OutputDir  string
-	ModelPath  string
-	ModelStem  string
+	Config      *config.Config
+	HW          *hardware.HardwareInfo
+	Runner      *bench.BenchRunner
+	Thermal     *hardware.ThermalMonitor
+	Logger      *output.Logger
+	JSONLWriter *output.JSONLWriter // opened once per SweepModel, closed by caller
+	MaxNGL      int
+	NumLayers   int // model layer count from GGUF metadata; 0 = unknown
+	Best        BestConfig
+	WS          WorkingSets
+	OutputDir   string
+	ModelPath   string
+	ModelStem   string
 
 	// SkipCombos holds combo keys from sweep.jsonl when --focused is active.
 	// Keyed by phase ID → combo key string → performance data.

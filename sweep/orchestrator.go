@@ -83,9 +83,17 @@ func (s *Sweeper) SweepModel(ctx context.Context, modelPath string) error {
 		DebugLog:    logger.Debugf,
 	}
 
+	// Open JSONL writer once for the entire model sweep
+	jw, err := output.NewJSONLWriter(outputDir)
+	if err != nil {
+		return fmt.Errorf("open sweep.jsonl: %w", err)
+	}
+	defer jw.Close()
+
 	// Build PhaseEnv
 	env := phase.NewPhaseEnv(s.Config, s.HW, runner, thermal, logger,
 		outputDir, modelPath, modelStem)
+	env.JSONLWriter = jw
 
 	// Parse GGUF metadata to cap NGL at the model's actual layer count.
 	// Values above NumLayers are functionally identical (llama.cpp clamps silently).

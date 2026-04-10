@@ -246,9 +246,16 @@ func RecordAndTrack(ctx context.Context, env *PhaseEnv, label string, p bench.Ru
 		binaryLabel = bl
 	}
 
-	if err := output.AppendRecord(env.OutputDir, env.ModelPath, env.ModelStem,
-		jp, res, p.Phase, p.PhaseLabel, binaryLabel); err != nil {
-		env.Logger.Warn("AppendRecord failed: %v", err)
+	if env.JSONLWriter != nil {
+		if err := env.JSONLWriter.WriteRecord(env.ModelPath, env.ModelStem,
+			jp, res, p.Phase, p.PhaseLabel, binaryLabel); err != nil {
+			env.Logger.Warn("WriteRecord failed: %v", err)
+		}
+	} else {
+		if err := output.AppendRecord(env.OutputDir, env.ModelPath, env.ModelStem,
+			jp, res, p.Phase, p.PhaseLabel, binaryLabel); err != nil {
+			env.Logger.Warn("AppendRecord failed: %v", err)
+		}
 	}
 
 	return res.Status, bench.TGSpeed(res.Results), bench.PPSpeed(res.Results)
