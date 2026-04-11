@@ -6,6 +6,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.7.6] — 2026-04-11
+
+### Fixed
+- Phase 6 fallback Parts 1 and 2 now use `effectiveCTK`/`effectiveCTV` (the `--p6-ctk`/`--p6-ctv` override values) instead of `env.Best.CTK`/`env.Best.CTV`. Previously, when `--p6-ctk q8_0 --p6-ctv turbo2` was used and the primary config OOMed, the nkvo-flip fallback silently reverted to `f16/f16` — causing `q8_0/turbo2/nkvo=0` to never be tested.
+
+---
+
 ## [1.7.5] — 2026-04-11
 
 ### Added

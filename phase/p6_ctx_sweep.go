@@ -180,13 +180,17 @@ func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
 
 	var fallbacks []fallback
 
-	// Part 1: nkvo flip (keep current CTK/CTV)
+	// Part 1: nkvo flip (keep effective CTK/CTV — may differ from env.Best via --p6-ctk/--p6-ctv)
 	altNKVO := 1 - env.Best.NKVO
 	if containsInt(env.WS.NKVO, altNKVO) {
+		fa, found := FindFACTKByKV(env.WS.FACTK, effectiveCTK, effectiveCTV)
+		if !found {
+			fa = env.Best.FA // best available FA for this KV combo
+		}
 		fallbacks = append(fallbacks, fallback{
-			FA:   env.Best.FA,
-			CTK:  env.Best.CTK,
-			CTV:  env.Best.CTV,
+			FA:   fa,
+			CTK:  effectiveCTK,
+			CTV:  effectiveCTV,
 			NKVO: altNKVO,
 		})
 	}
@@ -198,7 +202,7 @@ func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
 		if !kvTypeAvailable(fbCTV, env.Runner.Selector.TurboAvailable, env.Runner.Selector.RotorAvailable) {
 			continue
 		}
-		fa, found := FindFACTKByKV(env.WS.FACTK, env.Best.CTK, fbCTV)
+		fa, found := FindFACTKByKV(env.WS.FACTK, effectiveCTK, fbCTV)
 		if !found {
 			continue
 		}
@@ -208,7 +212,7 @@ func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
 			}
 			fallbacks = append(fallbacks, fallback{
 				FA:   fa,
-				CTK:  env.Best.CTK,
+				CTK:  effectiveCTK,
 				CTV:  fbCTV,
 				NKVO: nkvoFB,
 			})
