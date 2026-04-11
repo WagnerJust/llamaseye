@@ -167,7 +167,9 @@ model weights.
 
 Enabled via `--turbo-bench <path>` / `SWEEP_TURBO_BENCH_BIN`.
 
-### RotorQuant
+### RotorQuant _(experimental — currently broken)_
+
+> **Status:** Non-functional. Do not use `--rotor-bench` until this is resolved.
 
 Built from the [johndpope/llama-cpp-turboquant](https://github.com/johndpope/llama-cpp-turboquant)
 fork (branch `feature/planarquant-kv-cache`). Adds `planar3`, `planar4`, `iso3`,

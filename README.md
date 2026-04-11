@@ -131,7 +131,9 @@ cmake --build build --config Release --target llama-bench -j$(nproc)
 
 llamaseye verifies the binary at startup by running `<binary> --help` and checking for the `turbo3` marker in the output. If the marker is present, turbo types are enabled. If the path is missing, not executable, or the marker is absent, turbo types are silently omitted and the sweep continues with the standard KV type set. It is safe to always pass `--turbo-bench` — llamaseye handles an invalid path gracefully.
 
-### Optional: RotorQuant llama-bench
+### Optional: RotorQuant llama-bench _(experimental — currently broken, do not use)_
+
+> **Warning:** RotorQuant support is currently non-functional. Do not use `--rotor-bench` until this is resolved.
 
 To enable `planar3`/`planar4`/`iso3`/`iso4` KV cache types (from the [RotorQuant](https://github.com/scrya-com/rotorquant) project), build from the [johndpope/llama-cpp-turboquant](https://github.com/johndpope/llama-cpp-turboquant) fork (branch `feature/planarquant-kv-cache`) and pass it via `--rotor-bench <path>`.
 
@@ -171,7 +173,7 @@ If these are absent, llamaseye disables the corresponding thermal guard and logs
 | `--output-dir <dir>` | Root directory for all results (default: `./results`) |
 | `--llama-bench <path>` | Path to standard llama-bench binary |
 | `--turbo-bench <path>` | Path to TurboQuant llama-bench binary (enables turbo2/3/4 KV types) |
-| `--rotor-bench <path>` | Path to RotorQuant llama-bench binary (enables planar3/4, iso3/4 KV types) |
+| `--rotor-bench <path>` | **[EXPERIMENTAL - broken]** Path to RotorQuant llama-bench binary (enables planar3/4, iso3/4 KV types) |
 | `--asymmetric-kv` / `--no-asymmetric-kv` | Include asymmetric K/V quant combos in Phase 2 when `--turbo-bench` is set (default: enabled) |
 | `--ngl-step <n>` | Step size for NGL axis sweep (default: 4) |
 | `--repetitions <n>` | Repetitions per benchmark run (default: 3) |

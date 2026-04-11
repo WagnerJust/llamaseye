@@ -6,6 +6,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.7.4] — 2026-04-11
+
+### Changed
+- `--rotor-bench` flag and `SWEEP_ROTOR_BENCH_BIN` env var now marked as **experimental / currently broken** in all user-facing docs (flag help, `example.env`, `README.md`, `docs/spec.md`). The flag still exists and the code path is unchanged; it is simply documented as non-functional until the issue is resolved.
+
+---
+
 ## [1.7.3] — 2026-04-09
 
 ### Fixed
