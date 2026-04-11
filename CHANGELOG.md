@@ -6,6 +6,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.7.5] — 2026-04-11
+
+### Added
+- `--p6-ctk` / `SWEEP_P6_CTK` and `--p6-ctv` / `SWEEP_P6_CTV` flags — override the CTK/CTV Phase 6 uses as its starting config, independent of what prior phases determined as best. Useful for re-running the context ceiling sweep with a specific quant type (e.g. `--p6-ctk q8_0 --p6-ctv turbo2`) without re-running earlier phases or patching `state.json`. Unknown type strings warn and fall back to best.
+
+---
+
 ## [1.7.4] — 2026-04-11
 
 ### Changed

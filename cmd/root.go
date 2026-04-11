@@ -62,6 +62,8 @@ func Parse(args []string, version string) (*config.Config, []string, error) {
 	fs.StringVar(&cfg.StartCTK, "start-ctk", cfg.StartCTK, "Begin KV quant sweep at this type")
 	fs.StringVar(&cfg.StartCTV, "start-ctv", cfg.StartCTV, "Begin V-cache quant sweep at this type")
 	fs.StringVar(&cfg.CTV, "ctv", cfg.CTV, "Restrict Phase 2 to these CTV values (comma-separated, e.g. turbo3,turbo2)")
+	fs.StringVar(&cfg.P6CTK, "p6-ctk", cfg.P6CTK, "Override CTK Phase 6 uses as its starting config (empty = use best from prior phases)")
+	fs.StringVar(&cfg.P6CTV, "p6-ctv", cfg.P6CTV, "Override CTV Phase 6 uses as its starting config (empty = use best from prior phases)")
 	fs.StringVar(&startB, "start-b", "", "Begin batch size sweep at this value")
 	fs.StringVar(&startUB, "start-ub", "", "Begin ubatch size sweep at this value")
 	fs.StringVar(&startFA, "start-fa", "", "Begin FA sweep at this value (0 or 1)")

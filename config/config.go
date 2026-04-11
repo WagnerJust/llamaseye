@@ -97,6 +97,10 @@ type Config struct {
 	// Focused mode: only run combos not already in sweep.jsonl
 	Focused bool
 
+	// Phase 6 CTK/CTV overrides — pins the starting config for the context sweep
+	P6CTK string // --p6-ctk / SWEEP_P6_CTK (empty = use best from prior phases)
+	P6CTV string // --p6-ctv / SWEEP_P6_CTV (empty = use best from prior phases)
+
 	// Debug mode
 	Debug bool
 }
@@ -187,6 +191,8 @@ func Defaults() *Config {
 		CTV:             envStr("SWEEP_CTV", ""),
 		AsymmetricKV:   envBool("SWEEP_ASYMMETRIC_KV", true),
 		Focused:         envBool("SWEEP_FOCUSED", false),
+		P6CTK:           envStr("SWEEP_P6_CTK", ""),
+		P6CTV:           envStr("SWEEP_P6_CTV", ""),
 		Debug:           envBool("SWEEP_DEBUG", false),
 	}
 }

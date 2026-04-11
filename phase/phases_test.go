@@ -580,6 +580,59 @@ func TestP6CtxSweep_FineCTX(t *testing.T) {
 	}
 }
 
+func TestP6CtxSweep_P6CTKOverride(t *testing.T) {
+	// Verify that --p6-ctk pins Phase 6 to use the specified CTK instead of env.Best.CTK.
+	// env.Best.CTK is f16 but we override to q8_0.
+	exec := &mockPhaseExecutor{responses: []phaseResponse{
+		{stdout: okOutput()}, // ctx=512
+		{stdout: okOutput()}, // ctx=1024
+	}}
+	env := newTestEnv(t, exec)
+	env.Config.StartCtx = intPtr(512)
+	env.Config.P6CTK = "q8_0"
+	env.Config.P6CTV = "turbo2"
+	env.Best.CTK = "f16"
+	env.Best.CTV = "f16"
+	env.WS.NKVO = []int{0}
+	env.WS.FACTK = []state.FACTKCombo{
+		{FA: 1, CTK: "q8_0", CTV: "turbo2"},
+	}
+	env.Runner.Selector.TurboAvailable = true
+
+	p := P6CtxSweep{}
+	if err := p.Run(context.Background(), env); err != nil {
+		t.Fatalf("P6 with override: %v", err)
+	}
+	// Phase 6 should have succeeded and populated WS.CTX
+	if len(env.WS.CTX) == 0 {
+		t.Error("expected WS.CTX non-empty with P6CTK override")
+	}
+	// env.Best.CTK should NOT be mutated by Phase 6's override
+	if env.Best.CTK != "f16" {
+		t.Errorf("Best.CTK mutated to %q, expected f16 (override should be local to Phase 6)", env.Best.CTK)
+	}
+}
+
+func TestP6CtxSweep_P6CTKOverrideUnknownType(t *testing.T) {
+	// An unknown CTK type should warn and fall back to env.Best.CTK without panicking.
+	exec := &mockPhaseExecutor{responses: []phaseResponse{
+		{stdout: okOutput()},
+	}}
+	env := newTestEnv(t, exec)
+	env.Config.StartCtx = intPtr(512)
+	env.Config.P6CTK = "bogustype"
+	env.Best.CTK = "f16"
+	env.Best.CTV = "f16"
+	env.WS.NKVO = []int{0}
+	env.WS.FACTK = nil
+
+	p := P6CtxSweep{}
+	// Should not panic or error — just warn and continue with f16
+	if err := p.Run(context.Background(), env); err != nil {
+		t.Fatalf("P6 with unknown override type: %v", err)
+	}
+}
+
 func TestP7CombinationMatrix_NoGoal(t *testing.T) {
 	exec := &mockPhaseExecutor{} // all OK
 	env := newTestEnv(t, exec)

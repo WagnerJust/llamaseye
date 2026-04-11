@@ -25,16 +25,39 @@ func (P6CtxSweep) Run(ctx context.Context, env *PhaseEnv) error {
 	// Shared with common.CTKQualityOrder — do not duplicate.
 	kvQualityOrder := CTKQualityOrder
 
+	// Resolve effective starting CTK/CTV for Phase 6.
+	// --p6-ctk / --p6-ctv override env.Best when non-empty.
+	effectiveCTK := env.Best.CTK
+	if env.Config.P6CTK != "" {
+		if CTKQualityIndex(env.Config.P6CTK) == -1 {
+			env.Logger.Warn("[Phase 6] --p6-ctk value %q is not a known KV type — falling back to best (%s)",
+				env.Config.P6CTK, env.Best.CTK)
+		} else {
+			effectiveCTK = env.Config.P6CTK
+			env.Logger.Log("[Phase 6] CTK override: %s (best from prior phases was %s)", effectiveCTK, env.Best.CTK)
+		}
+	}
+	effectiveCTV := env.Best.CTV
+	if env.Config.P6CTV != "" {
+		if CTKQualityIndex(env.Config.P6CTV) == -1 {
+			env.Logger.Warn("[Phase 6] --p6-ctv value %q is not a known KV type — falling back to best (%s)",
+				env.Config.P6CTV, env.Best.CTV)
+		} else {
+			effectiveCTV = env.Config.P6CTV
+			env.Logger.Log("[Phase 6] CTV override: %s (best from prior phases was %s)", effectiveCTV, env.Best.CTV)
+		}
+	}
+
 	bestCTKIdx := len(kvQualityOrder) - 1 // default = f16
 	for i, v := range kvQualityOrder {
-		if v == env.Best.CTK {
+		if v == effectiveCTK {
 			bestCTKIdx = i
 			break
 		}
 	}
 	bestCTVIdx := len(kvQualityOrder) - 1 // default = f16
 	for i, v := range kvQualityOrder {
-		if v == env.Best.CTV {
+		if v == effectiveCTV {
 			bestCTVIdx = i
 			break
 		}
@@ -57,7 +80,7 @@ func (P6CtxSweep) Run(ctx context.Context, env *PhaseEnv) error {
 			continue
 		}
 
-		result := p6TryCtx(ctx, env, ctxVal, kvQualityOrder, bestCTKIdx, bestCTVIdx)
+		result := p6TryCtx(ctx, env, ctxVal, kvQualityOrder, bestCTKIdx, bestCTVIdx, effectiveCTK, effectiveCTV)
 
 		if result == "ok" {
 			continue
@@ -83,7 +106,7 @@ func (P6CtxSweep) Run(ctx context.Context, env *PhaseEnv) error {
 					break
 				}
 				env.Logger.Log("[Phase 6] Bisect probe: ctx=%d (range %d–%d)", mid, env.Best.CTX, hi)
-				bisectResult := p6TryCtx(ctx, env, mid, kvQualityOrder, bestCTKIdx, bestCTVIdx)
+				bisectResult := p6TryCtx(ctx, env, mid, kvQualityOrder, bestCTKIdx, bestCTVIdx, effectiveCTK, effectiveCTV)
 				switch bisectResult {
 				case "ok":
 					// BEST_CTX updated by p6TryCtx
@@ -115,15 +138,16 @@ func (P6CtxSweep) Run(ctx context.Context, env *PhaseEnv) error {
 
 // p6TryCtx tries the primary config at ctx, then fallbacks if it fails.
 // Returns "ok", "timeout", or "fail".
+// effectiveCTK/CTV are the resolved starting types (may be overridden via --p6-ctk/--p6-ctv).
 func p6TryCtx(ctx context.Context, env *PhaseEnv, ctxVal int,
-	kvOrder []string, bestCTKIdx, bestCTVIdx int) string {
+	kvOrder []string, bestCTKIdx, bestCTVIdx int, effectiveCTK, effectiveCTV string) string {
 
 	// Primary config
 	status, _, _ := RecordAndTrack(ctx, env, fmt.Sprintf("phase6/ctx=%d", ctxVal), bench.RunParams{
 		NGL:        env.Best.NGL,
 		FA:         env.Best.FA,
-		CTK:        env.Best.CTK,
-		CTV:        env.Best.CTV,
+		CTK:        effectiveCTK,
+		CTV:        effectiveCTV,
 		Threads:    env.Best.Threads,
 		NKVO:       env.Best.NKVO,
 		B:          env.Best.B,
