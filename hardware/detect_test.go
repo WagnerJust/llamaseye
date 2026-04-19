@@ -1,7 +1,6 @@
 package hardware
 
 import (
-	"runtime"
 	"testing"
 )
 
@@ -22,8 +21,14 @@ func TestDetect_Smoke(t *testing.T) {
 	if hw.CPUModel == "" {
 		t.Error("CPUModel is empty")
 	}
-	// Backend should be set on macOS (metal) or linux (cuda/cpu)
-	if runtime.GOOS == "darwin" && hw.Backend != "metal" {
-		t.Errorf("Backend = %q on darwin, want metal", hw.Backend)
+	// Backend must be a known value on every platform.
+	validBackends := map[Backend]bool{
+		BackendMetal: true,
+		BackendCUDA:  true,
+		BackendROCm:  true,
+		BackendCPU:   true,
+	}
+	if !validBackends[hw.Backend] {
+		t.Errorf("Backend = %q, want one of metal/cuda/rocm/cpu", hw.Backend)
 	}
 }
