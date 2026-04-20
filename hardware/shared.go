@@ -53,3 +53,66 @@ func isCommandAvailable(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
 }
+
+// detectROCmSMI attempts to query rocm-smi and fill AMD GPU fields.
+// Returns true if an AMD GPU was found.
+func detectROCmSMI(h *HardwareInfo) bool {
+	if _, err := exec.LookPath("rocm-smi"); err != nil {
+		return false
+	}
+	if err := exec.Command("rocm-smi").Run(); err != nil {
+		return false
+	}
+
+	h.Backend = BackendROCm
+
+	if out, err := exec.Command("rocm-smi", "--showgpucount").Output(); err == nil {
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "GPU count:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					n, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+					h.GPUCount = n
+				}
+				break
+			}
+		}
+	}
+
+	if out, err := exec.Command("rocm-smi", "--showproductname").Output(); err == nil {
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.Contains(line, "Card series:") {
+				parts := strings.SplitN(line, "Card series:", 2)
+				if len(parts) == 2 {
+					h.GPUModel = strings.TrimSpace(parts[1])
+				}
+				break
+			}
+		}
+	}
+
+	if out, err := exec.Command("rocm-smi", "--showmeminfo", "vram").Output(); err == nil {
+		var totalBytes, usedBytes int64
+		for _, line := range strings.Split(string(out), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.Contains(line, "VRAM Total Memory (B):") {
+				parts := strings.SplitN(line, "VRAM Total Memory (B):", 2)
+				if len(parts) == 2 {
+					totalBytes, _ = strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+				}
+			}
+			if strings.Contains(line, "VRAM Total Used Memory (B):") {
+				parts := strings.SplitN(line, "VRAM Total Used Memory (B):", 2)
+				if len(parts) == 2 {
+					usedBytes, _ = strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+				}
+			}
+		}
+		h.GPUVRAMGiB = int(totalBytes / (1 << 30))
+		if totalBytes > 0 {
+			h.GPUVRAMFreeGiB = int((totalBytes - usedBytes) / (1 << 30))
+		}
+	}
+
+	return true
+}
