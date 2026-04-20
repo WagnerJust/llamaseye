@@ -78,7 +78,7 @@ HW_GPU_VRAM_GIB     Total VRAM in GiB (first GPU)
 HW_GPU_VRAM_FREE_GIB  Free VRAM at sweep start in GiB (first GPU)
 HW_GPU_TEMP_LIMIT   GPU thermal pause threshold (default: 81 °C — overridable)
 HW_CPU_TEMP_LIMIT   CPU thermal pause threshold (default: 88 °C — overridable)
-HW_BACKEND          Detected compute backend: "cuda", "metal", "cpu"
+HW_BACKEND          Detected compute backend: "cuda", "metal", "rocm", "cpu"
 ```
 
 ### How each value is read
