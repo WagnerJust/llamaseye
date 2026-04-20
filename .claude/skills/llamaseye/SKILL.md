@@ -283,11 +283,15 @@ uname -m        # x86_64 | arm64 | aarch64
 # Check for an NVIDIA GPU (CUDA)
 nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null && echo "CUDA available"
 
+# Check for an AMD GPU (ROCm)
+rocm-smi --query-gpu=name 2>/dev/null && echo "ROCm available"
+
 # Check for Apple Silicon (Metal — arm64 macOS)
 # If uname -s = Darwin and uname -m = arm64 → Apple Silicon, use Metal
 # If uname -s = Darwin and uname -m = x86_64 → Intel Mac, use Metal
 # If uname -s = Linux and nvidia-smi works → use CUDA
-# If uname -s = Linux and no nvidia-smi → CPU-only
+# If uname -s = Linux and rocm-smi works → use ROCm
+# If uname -s = Linux and neither works → CPU-only
 ```
 
 Use the results to pick the right build flags from the table below:
@@ -327,6 +331,7 @@ cd ~/llama.cpp
 
 # Substitute <BACKEND_FLAG> and <JOBS> from the table above
 # Example for CUDA:   cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+# Example for ROCm:   cmake -B build -DGGML_HIP=ON -DCMAKE_BUILD_TYPE=Release
 # Example for Metal:  cmake -B build -DGGML_METAL=ON -DCMAKE_BUILD_TYPE=Release
 # Example CPU-only:   cmake -B build -DCMAKE_BUILD_TYPE=Release
 

@@ -14,5 +14,13 @@ Thumbs.db
 *.tmp
 .local
 .env
-.claude
+
+# Worktrees
+.worktrees/
+
+# AI Agent Workspaces
+.claude/
 !.claude/skills/
+.pi/
+.zed/
+.cursor/
