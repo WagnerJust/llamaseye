@@ -164,6 +164,7 @@ The Go binary uses native OS APIs for hardware detection and thermal monitoring.
 | Tool | Purpose | Install |
 |------|---------|---------|
 | `nvidia-smi` | NVIDIA GPU VRAM/temp detection | Included with NVIDIA drivers |
+| `rocm-smi` | AMD GPU VRAM detection (Linux/ROCm) | Included with ROCm drivers |
 | `sensors` | Linux CPU temperature reading | `apt install lm-sensors` |
 | `osx-cpu-temp` | macOS CPU temperature reading (optional) | `brew install osx-cpu-temp` |
 
@@ -447,8 +448,8 @@ At startup the script probes:
 
 - **CPU cores** — via `nproc` (Linux) or `sysctl -n hw.logicalcpu` (macOS)
 - **System RAM** — to compute safe context-size upper bounds
-- **GPU VRAM** — via `nvidia-smi` or `system_profiler` (Apple Silicon)
-- **Compute backend** — cuda / metal / cpu, inferred from the llama-bench binary
+- **GPU VRAM** — via `nvidia-smi` (NVIDIA), `rocm-smi` (AMD/ROCm, Linux), or `system_profiler` (Apple Silicon)
+- **Compute backend** — cuda / metal / rocm / cpu; AMD GPUs on Linux are detected via `rocm-smi` and reported as `backend: "rocm"` in `hardware.json`
 - **Thermal sensors** — `nvidia-smi` for GPU, `sensors` or `/sys/class/thermal` for CPU
 
 All sweep parameters are derived from these detected values. The script contains no hardcoded machine-specific constants.

@@ -65,6 +65,7 @@ func detectROCmSMI(h *HardwareInfo) bool {
 	}
 
 	h.Backend = BackendROCm
+	h.GPUCount = 1 // safe default; overridden below if --showgpucount parses successfully
 
 	if out, err := exec.Command("rocm-smi", "--showgpucount").Output(); err == nil {
 		for _, line := range strings.Split(string(out), "\n") {
@@ -81,7 +82,7 @@ func detectROCmSMI(h *HardwareInfo) bool {
 
 	if out, err := exec.Command("rocm-smi", "--showproductname").Output(); err == nil {
 		for _, line := range strings.Split(string(out), "\n") {
-			if strings.Contains(line, "Card series:") {
+			if strings.HasPrefix(strings.TrimSpace(line), "GPU[") && strings.Contains(line, "Card series:") {
 				parts := strings.SplitN(line, "Card series:", 2)
 				if len(parts) == 2 {
 					h.GPUModel = strings.TrimSpace(parts[1])
