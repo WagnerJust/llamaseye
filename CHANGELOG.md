@@ -6,6 +6,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.8.1] — 2026-04-29
+
+### Added
+- AMD GPU detection on Linux via `rocm-smi`: populates GPU model, VRAM total/free, and GPU temperature monitoring. `hardware.json` now records `backend = "rocm"` for AMD systems. Requires ROCm userspace tools (`rocm-smi`) to be installed; falls back to `cpu` if absent.
+
+---
+
 ## [1.8.0] — 2026-04-29
 
 ### Added
