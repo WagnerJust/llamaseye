@@ -22,8 +22,8 @@ func Detect() (*HardwareInfo, error) {
 	// RAM
 	h.RAMGiB, h.RAMFreeGiB = linuxRAM()
 
-	// GPU
-	if !detectNvidiaSMI(h) {
+	// GPU — NVIDIA first, then AMD, then CPU fallback.
+	if !detectNvidiaSMI(h) && !detectROCmSMI(h) {
 		h.Backend = BackendCPU
 		h.GPUCount = 0
 		h.GPUModel = "none"
@@ -33,6 +33,9 @@ func Detect() (*HardwareInfo, error) {
 	h.CPUTempCmd = linuxCPUTempCmd()
 	if h.Backend == BackendCUDA {
 		h.GPUTempCmd = "nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader -i 0"
+	}
+	if h.Backend == BackendROCm {
+		h.GPUTempCmd = "rocm-smi --showtemp 2>/dev/null | awk '/[Jj]unction.*\\(C\\):/{gsub(/[^0-9.]/,\"\",$NF); printf \"%d\", $NF}'"
 	}
 
 	return h, nil

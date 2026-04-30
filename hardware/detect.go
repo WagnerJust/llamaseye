@@ -8,6 +8,7 @@ const (
 	BackendCUDA   Backend = "cuda"
 	BackendMetal  Backend = "metal"
 	BackendCPU    Backend = "cpu"
+	BackendROCm   Backend = "rocm"
 )
 
 // HardwareInfo holds the detected hardware inventory.
