@@ -130,7 +130,7 @@ Every CLI flag has a matching `SWEEP_*` environment variable. CLI flags always o
 **Every PR that changes behaviour must also update:**
 1. `README.md` -- user-facing description of affected phases, flags, or output
 2. `docs/spec.md` -- engineering spec (JSONL schema, phase behaviour, output format)
-3. `.agents/skills/llamaseye/SKILL.md` -- skill doc used by AI agents
+3. `skills/llamaseye.md` -- canonical operational skill (user-facing flags, examples, phase reference). The llamaseye binary embeds this file via `go:embed` and writes it into `~/.claude/skills/` and `~/.agents/skills/` when users run `llamaseye install-skill --apply`.
 
 Update all three in the same branch/PR as the code change. Do not merge a code PR without the doc updates.
 
@@ -144,14 +144,27 @@ Update all three in the same branch/PR as the code change. Do not merge a code P
 
 No commit should land on `main` without a corresponding version entry.
 
-## Available Skills
+## Operational Skill
 
-Skills are located in `./.agents/skills/`. Every skill folder contains a `SKILL.md` defining its inputs/outputs.
+The user-facing operational guide for running llamaseye sweeps lives in
+`skills/llamaseye.md` (plain markdown with YAML frontmatter). It is embedded
+into the binary at build time and installed into agent-tool skill directories
+on demand:
 
-- **llamaseye** -- Operating the llamaseye sweep tool, running benchmarks, interpreting results
-- **build** -- Building and testing the project
+```sh
+llamaseye install-skill --apply             # both targets, $HOME scope
+llamaseye install-skill --target claude --apply
+llamaseye install-skill --local --apply     # install into the cwd instead of $HOME
+llamaseye install-skill --list              # show targets and exit
+```
+
+Targets: `claude` (`~/.claude/skills/llamaseye/SKILL.md`), `agents`
+(`~/.agents/skills/llamaseye/SKILL.md`). Default is dry-run; `--apply` writes.
+
+Build/test/lint commands live at the top of this file under "Tech Stack" — no
+separate cheatsheet needed.
 
 ## Tooling Authority
 
 - Use **Global MCPs** (GitHub, Context7) for external data and issue tracking.
-- Use **Local Skills** for anything involving filesystem changes, builds, or benchmarking.
+- For benchmarking and filesystem actions, use the llamaseye binary directly.

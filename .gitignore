@@ -19,8 +19,9 @@ Thumbs.db
 .worktrees/
 
 # AI Agent Workspaces
+# Cross-agent skills live in .agents/skills/ (committed). Tool-specific
+# skill folders (.claude/, .cursor/, etc.) are user-local and not tracked.
 .claude/
-!.claude/skills/
 .pi/
 .zed/
 .cursor/

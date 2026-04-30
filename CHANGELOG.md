@@ -6,6 +6,28 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.8.0] — 2026-04-29
+
+### Added
+- `llamaseye install-skill` subcommand: writes the embedded operational skill to `~/.claude/skills/llamaseye/SKILL.md` and/or `~/.agents/skills/llamaseye/SKILL.md` on demand. Defaults to dry-run + both targets + `$HOME` scope. Flags: `--target {claude,agents}`, `--local`, `--apply`, `--force`, `--list`.
+- New top-level `skills/` Go package containing `llamaseye.md` — the canonical operational guide (plain markdown with YAML frontmatter), embedded into the binary via `go:embed`.
+- New `internal/skill` package with the install-target registry and the `Install` function, covered by `internal/skill/skill_test.go` (dry-run, apply, target selection, force/no-force, unknown target).
+- `codecov/codecov-action@v5` step in `ci.yml` uploads `coverage.out` to Codecov on every PR, making the existing `codecov.yml` load-bearing (per-PR coverage diffs in PR comments).
+- `README.md` gains a "For coding-agent users" section explaining `llamaseye install-skill --apply`.
+
+### Changed
+- Doc-update rule in `AGENTS.md`, `CONTRIBUTING.md`, and `.github/pull_request_template.md` now points at `skills/llamaseye.md` (the canonical embedded source). PRs that change behaviour update the canonical file; the binary picks up the change automatically.
+- `CLAUDE.md` rewritten: agent-tool skill folders (`.claude/skills/`, `.agents/skills/`) are user-local and gitignored; the source of truth is `skills/llamaseye.md`.
+
+### Removed
+- `.agents/skills/` directory (both `llamaseye/SKILL.md` and `build/SKILL.md`) introduced in 1.7.7. The build cheatsheet was redundant with AGENTS.md's "Tech Stack" section; the operational skill moved into `skills/` and is distributed via the new install-skill subcommand.
+- `.claude/skills/` no longer allow-listed in `.gitignore`; tool-specific skill folders are user-local across the board.
+
+### Why
+1.7.7 promoted the operational skill into the repo at `.agents/skills/llamaseye/SKILL.md` to make the Doc-Update Rule honest. Reviewing for public-OSS readiness surfaced two follow-ups: the previously-tracked `.claude/skills/llamaseye/SKILL.md` leaked private hostnames into a public repo, and `codecov.yml` was scaffolded by plumbline but never wired to upload anything. This release fixes both, and goes one step further: instead of shipping the skill as a static checked-in file that contributors and end users have to find, the binary itself ships and installs it (same pattern as `plumbline install-skill --apply`). End users who `go install github.com/WagnerJust/llamaseye@latest` get the operational guide for their coding agent with one command, without cloning.
+
+---
+
 ## [1.7.7] — 2026-04-29
 
 ### Added

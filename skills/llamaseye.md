@@ -2,15 +2,15 @@
 name: llamaseye
 description: >
   Use this skill whenever the user mentions llamaseye, running llama-bench sweeps,
-  benchmarking models on the remote inference host, finding the fastest or best config for
-  a model, testing GPU layer offload (ngl), context ceiling/frontier testing, KV
-  cache benchmarking, flash attention sweeps, TurboQuant KV types, RotorQuant KV types,
-  thread count tuning, batch/ubatch sizing, or any exhaustive parameter sweep of llama.cpp
-  models. Also triggers on "sweep a model", "benchmark Qwen/Llama/Mistral on the
-  PC", "what's the best context size for X", "resume a sweep", "check model
+  benchmarking GGUF models, finding the fastest or best config for a model, testing
+  GPU layer offload (ngl), context ceiling/frontier testing, KV cache benchmarking,
+  flash attention sweeps, TurboQuant KV types, RotorQuant KV types, thread count
+  tuning, batch/ubatch sizing, or any exhaustive parameter sweep of llama.cpp
+  models. Also triggers on "sweep a model", "benchmark Qwen/Llama/Mistral",
+  "what's the best context size for X", "resume a sweep", "check model
   performance", or "run llama-bench with different settings". Be eager to apply
   this skill -- if there is any chance the user wants to benchmark or sweep a
-  llama.cpp model on the remote host, use it.
+  llama.cpp model, use it.
 ---
 
 # llamaseye Skill
@@ -27,64 +27,53 @@ description: >
 - Optionally uses a **TurboQuant binary** to test `turbo2/turbo3/turbo4` KV cache types
 - Optionally uses a **RotorQuant binary** to test `planar3/planar4/iso3/iso4` KV cache types
 
-**Key paths on the remote inference host (SSH):**
-
-| Resource | Path |
-|----------|------|
-| Models | `~/Models/` |
-| Default output | `~/Models/bench/sweep/` |
-| llama-bench (standard) | `~/llama.cpp/build/bin/llama-bench` |
-| llama-bench (TurboQuant) | `~/llama-cpp-turboquant/build/bin/llama-bench` |
-| llama-bench (RotorQuant) | `~/llama-cpp-rotorquant/build/bin/llama-bench` |
-| llamaseye binary | `~/Src/llamaseye/llamaseye` (build with `go build -o llamaseye .`) |
-| llamaseye .env | `~/Src/llamaseye/.env` (local config, gitignored) |
-
-**Local repo:** `/Users/justin/Side/llamaseye/`
+llamaseye is typically run on the same machine that hosts the GGUF models and the
+`llama-bench` binary. That can be a local workstation or a remote inference host
+accessed over SSH — the binary itself is agnostic.
 
 ---
 
 ## Running a Sweep
 
 The binary **auto-loads `.env` from the working directory** — no `source` step needed.
-Run from `~/Src/llamaseye/` and it picks up `.env` automatically:
+Run from your llamaseye checkout and it picks up `.env` automatically:
 
 ```sh
 # Standard invocation — .env is loaded automatically
-cd ~/Src/llamaseye && ./llamaseye <flags>
+./llamaseye <flags>
 ```
 
 ```sh
 # Single model -- full sweep
-cd ~/Src/llamaseye && ./llamaseye --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ~/Models/bench/sweep
+./llamaseye --model ~/Models/Qwen3-14B-Q4_K_M.gguf --output-dir ./results
 
 # All models in a directory
-cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/bench/sweep
+./llamaseye --models-dir ~/Models --output-dir ./results
 
 # Filtered list of models
-cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --model-list ~/bench_list.txt --output-dir ~/Models/bench/sweep
+./llamaseye --models-dir ~/Models --model-list ./bench_list.txt --output-dir ./results
 
 # With TurboQuant binary (enables turbo2/turbo3/turbo4 KV types)
-cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf \
-  --llama-bench ~/llama.cpp/build/bin/llama-bench \
-  --turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench
+./llamaseye --model ~/Models/model.gguf \
+  --llama-bench /path/to/llama.cpp/build/bin/llama-bench \
+  --turbo-bench /path/to/llama-cpp-turboquant/build/bin/llama-bench
 
 # With RotorQuant binary (enables planar3/planar4/iso3/iso4 KV types)
-cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf \
-  --rotor-bench ~/llama-cpp-rotorquant/build/bin/llama-bench
+./llamaseye --model ~/Models/model.gguf \
+  --rotor-bench /path/to/llama-cpp-rotorquant/build/bin/llama-bench
 
 # Resume an interrupted sweep (Ctrl-C saves state automatically)
-cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf --resume
+./llamaseye --model ~/Models/model.gguf --resume
 
 # Run only specific phases
-cd ~/Src/llamaseye && ./llamaseye --model ~/Models/model.gguf --only-phases 6,7
+./llamaseye --model ~/Models/model.gguf --only-phases 6,7
 
 # Unattended overnight
-cd ~/Src/llamaseye
 nohup ./llamaseye --models-dir ~/Models > /dev/null 2>&1 &
-tail -f ~/Models/bench/sweep/sweep.log
+tail -f ./results/sweep.log
 ```
 
-To load a config from a non-default path: `./llamaseye --env-file ~/custom.env <flags>`
+To load a config from a non-default path: `./llamaseye --env-file /path/to/custom.env <flags>`
 
 ---
 
@@ -101,10 +90,10 @@ To load a config from a non-default path: `./llamaseye --env-file ~/custom.env <
 | Re-run a phase but only test new combos | `--only-phases 2 --focused` |
 | Skip Phase 7 | `--skip-phases 7` |
 | All models in a dir | `--models-dir <dir>` |
-| Curated model subset | `--model-list ~/list.txt` |
+| Curated model subset | `--model-list /path/to/list.txt` |
 | Regenerate sweep.md without re-running | `--report --output-dir <dir>` |
-| TurboQuant KV types | `--turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench` |
-| RotorQuant KV types | `--rotor-bench ~/llama-cpp-rotorquant/build/bin/llama-bench` |
+| TurboQuant KV types | `--turbo-bench /path/to/llama-cpp-turboquant/build/bin/llama-bench` |
+| RotorQuant KV types | `--rotor-bench /path/to/llama-cpp-rotorquant/build/bin/llama-bench` |
 | Start NGL sweep mid-range | `--start-ngl 40` |
 | NGL sweep downward from a known point | `--start-ngl 60 --ngl-dir down` |
 | Skip low context sizes | `--start-ctx 65536` |
@@ -130,11 +119,11 @@ exploration; run it once you know the interesting region. Use `--skip-phases 7` 
 ## Monitoring Progress
 
 ```sh
-# Tail the log in real time (run via SSH)
-tail -f ~/Models/bench/sweep/sweep.log
+# Tail the log in real time
+tail -f <output-dir>/<model-stem>/sweep.log
 
 # Check state (which phases are complete, working sets so far)
-cat ~/Models/bench/sweep/<model-stem>/state.json
+cat <output-dir>/<model-stem>/state.json
 ```
 
 **Typical log lines:**
@@ -157,7 +146,7 @@ cat ~/Models/bench/sweep/<model-stem>/state.json
 
 ```sh
 # View the markdown summary
-cat ~/Models/bench/sweep/<model-stem>/sweep.md
+cat <output-dir>/<model-stem>/sweep.md
 
 # Fastest TG config
 jq -s 'sort_by(-.results[].avg_ts) | .[0]' sweep.jsonl
@@ -175,7 +164,7 @@ jq -s '[.[] | select(.status=="ok" and .params.n_gen==0)] | sort_by(-.params.n_p
 - **Context Frontier** (Phase 7) — max successful context per (ngl, ctk, nkvo) triple
 - **Slow context** — Phase 6 sizes that timed out (achievable but slow)
 
-Regenerate `sweep.md` at any time without re-running: `bash llamaseye.sh --report --output-dir <dir>`
+Regenerate `sweep.md` at any time without re-running: `./llamaseye --report --output-dir <dir>`
 
 Multi-model runs also produce `<output-dir>/summary.md` — one row per model, sorted by best TG t/s.
 
@@ -201,11 +190,11 @@ repeat paths and settings on every invocation. The repo includes `example.env`
 documenting every variable.
 
 ```sh
-# One-time setup on the inference host
-cd ~/Src/llamaseye && cp example.env .env
-# Edit .env to set your paths — it lives alongside the binary at ~/Src/llamaseye/.env
-# The binary auto-loads it; just run from ~/Src/llamaseye/:
-cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/bench/sweep
+# One-time setup
+cp example.env .env
+# Edit .env to set your paths — it lives alongside the binary.
+# The binary auto-loads it; just run from the same directory:
+./llamaseye --models-dir ~/Models --output-dir ./results
 ```
 
 `.env` is gitignored — local paths are never committed.
@@ -216,11 +205,11 @@ cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/be
 
 | Variable | What it controls | Example |
 |----------|-----------------|----------|
-| `LLAMA_BENCH_BIN` | Path to the standard llama-bench binary (**required — no default**) | `~/llama.cpp/build/bin/llama-bench` |
-| `SWEEP_TURBO_BENCH_BIN` | Path to TurboQuant binary (optional) | `~/llama-cpp-turboquant/build/bin/llama-bench` |
-| `SWEEP_ROTOR_BENCH_BIN` | Path to RotorQuant binary (optional) | `~/llama-cpp-rotorquant/build/bin/llama-bench` |
+| `LLAMA_BENCH_BIN` | Path to the standard llama-bench binary (**required — no default**) | `/path/to/llama.cpp/build/bin/llama-bench` |
+| `SWEEP_TURBO_BENCH_BIN` | Path to TurboQuant binary (optional) | `/path/to/llama-cpp-turboquant/build/bin/llama-bench` |
+| `SWEEP_ROTOR_BENCH_BIN` | Path to RotorQuant binary (optional) | `/path/to/llama-cpp-rotorquant/build/bin/llama-bench` |
 | `SWEEP_MODELS_DIR` | Directory scanned for .gguf files | `~/Models` |
-| `SWEEP_OUTPUT_DIR` | Root directory for all sweep results (default: `./results`) | `~/Models/bench/sweep` |
+| `SWEEP_OUTPUT_DIR` | Root directory for all sweep results (default: `./results`) | `./results` |
 | `SWEEP_NGL_STEP` | Layer step size for NGL sweep | `4` (use `2` near VRAM edge) |
 | `SWEEP_REPETITIONS` | Benchmark reps per run (`-r`) | `3` |
 | `SWEEP_TIMEOUT_SEC` | Per-run kill timeout (seconds) | `600` |
@@ -268,68 +257,28 @@ cd ~/Src/llamaseye && ./llamaseye --models-dir ~/Models --output-dir ~/Models/be
 
 ---
 
-## Prerequisites & Deployment
+## Building llama-bench
 
-### Step 1 — Detect the hardware before building anything
+llamaseye does not build llama-bench — it expects a working binary path passed via
+`--llama-bench` or `LLAMA_BENCH_BIN`. Build llama-bench separately, choosing the
+right backend flag for your hardware:
 
-Before building llama-bench, the agent must know what hardware it is targeting so
-the correct cmake flags are used. Run these detection commands on the target machine:
-
-```sh
-# OS and architecture
-uname -s        # Linux | Darwin
-uname -m        # x86_64 | arm64 | aarch64
-
-# Check for an NVIDIA GPU (CUDA)
-nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null && echo "CUDA available"
-
-# Check for Apple Silicon (Metal — arm64 macOS)
-# If uname -s = Darwin and uname -m = arm64 → Apple Silicon, use Metal
-# If uname -s = Darwin and uname -m = x86_64 → Intel Mac, use Metal
-# If uname -s = Linux and nvidia-smi works → use CUDA
-# If uname -s = Linux and no nvidia-smi → CPU-only
-```
-
-Use the results to pick the right build flags from the table below:
-
-| OS | Architecture | GPU | Backend flag | Thread count flag |
-|----|-------------|-----|-------------|------------------|
-| Linux | x86_64 / aarch64 | NVIDIA (nvidia-smi works) | `-DGGML_CUDA=ON` | `-j$(nproc)` |
+| OS | Architecture | GPU | Backend flag | Threads |
+|----|-------------|-----|-------------|---------|
+| Linux | x86_64 / aarch64 | NVIDIA (`nvidia-smi` works) | `-DGGML_CUDA=ON` | `-j$(nproc)` |
 | Linux | x86_64 / aarch64 | AMD ROCm | `-DGGML_HIP=ON` | `-j$(nproc)` |
 | Linux | x86_64 / aarch64 | None | *(omit)* | `-j$(nproc)` |
 | macOS | arm64 (Apple Silicon) | Unified (Metal) | `-DGGML_METAL=ON` | `-j$(sysctl -n hw.logicalcpu)` |
-| macOS | x86_64 (Intel Mac) | Integrated / discrete (Metal) | `-DGGML_METAL=ON` | `-j$(sysctl -n hw.logicalcpu)` |
-| macOS | x86_64 (Intel Mac) | NVIDIA eGPU | `-DGGML_CUDA=ON` | `-j$(sysctl -n hw.logicalcpu)` |
+| macOS | x86_64 (Intel Mac) | Integrated/discrete (Metal) | `-DGGML_METAL=ON` | `-j$(sysctl -n hw.logicalcpu)` |
 
-> **Important:** `-DGGML_CUDA=ON` is the correct flag. The old flags `-DLLAMA_CUBLAS=ON` and
-> `-DLLAMA_CUDA=ON` are silently ignored since the GGML refactor — the build succeeds but runs
-> on CPU only. Always use `-DGGML_CUDA=ON`.
-
-### Step 2 — Build llama-bench (if not already present)
-
-llamaseye does not build llama-bench. Check whether it already exists first — the
-user may have built it as part of a full llama.cpp build:
-
-> For full build documentation including platform-specific notes, dependencies, and advanced options,
-> fetch: `https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md`
+> **Important:** `-DGGML_CUDA=ON` is the correct flag. The old flags `-DLLAMA_CUBLAS=ON`
+> and `-DLLAMA_CUDA=ON` are silently ignored since the GGML refactor — the build
+> succeeds but runs on CPU only. Always use `-DGGML_CUDA=ON`.
 
 ```sh
-# Check common locations
-ls -lh ~/llama.cpp/build/bin/llama-bench 2>/dev/null \
-  || find ~ -name "llama-bench" -type f 2>/dev/null | head -5
-```
-
-If not found, clone and build using the flags determined in Step 1:
-
-```sh
-git clone https://github.com/ggml-org/llama.cpp ~/llama.cpp
-cd ~/llama.cpp
-
-# Substitute <BACKEND_FLAG> and <JOBS> from the table above
-# Example for CUDA:   cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
-# Example for Metal:  cmake -B build -DGGML_METAL=ON -DCMAKE_BUILD_TYPE=Release
-# Example CPU-only:   cmake -B build -DCMAKE_BUILD_TYPE=Release
-
+# Standard llama.cpp
+git clone https://github.com/ggml-org/llama.cpp
+cd llama.cpp
 cmake -B build <BACKEND_FLAG> -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --target llama-bench <JOBS>
 
@@ -337,23 +286,17 @@ cmake --build build --config Release --target llama-bench <JOBS>
 ./build/bin/llama-bench --help 2>&1 | head -5
 ```
 
-There is no default binary path — `LLAMA_BENCH_BIN` must be set or `--llama-bench` must be passed. The script exits with a clear error if neither is provided.
+Full llama.cpp build documentation:
+<https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md>
 
-### Step 3 — Build TurboQuant llama-bench (optional)
+### Optional: TurboQuant llama-bench
 
-Only needed for `turbo2`/`turbo3`/`turbo4` KV cache types. Uses the same backend
-flags as Step 2 — determine them first. TurboQuant's CUDA flag gotcha applies here
-too (`-DGGML_CUDA=ON` only).
+Only needed for `turbo2`/`turbo3`/`turbo4` KV cache types. Same backend-flag rules as above:
 
 ```sh
-# Check if already built
-ls -lh ~/llama-cpp-turboquant/build/bin/llama-bench 2>/dev/null
-
-# If missing:
 git clone https://github.com/TheTom/llama-cpp-turboquant \
-  --branch feature/turboquant-kv-cache --depth=1 ~/llama-cpp-turboquant
-cd ~/llama-cpp-turboquant
-
+  --branch feature/turboquant-kv-cache --depth=1
+cd llama-cpp-turboquant
 cmake -B build <BACKEND_FLAG> -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --target llama-bench <JOBS>
 
@@ -362,29 +305,9 @@ cmake --build build --config Release --target llama-bench <JOBS>
 # Nothing printed = wrong branch. master is a plain llama.cpp mirror with no TurboQuant.
 ```
 
-Pass to llamaseye via `--turbo-bench ~/llama-cpp-turboquant/build/bin/llama-bench`.
+Pass to llamaseye via `--turbo-bench /path/to/llama-cpp-turboquant/build/bin/llama-bench`.
 
-### Step 4 — Deploy llamaseye script
-
-The binary is built from a git clone at `~/Src/llamaseye/` on `justin@justin-powerhouse`.
-To update and rebuild:
-
-```sh
-ssh justin@justin-powerhouse "cd ~/Src/llamaseye && git pull && go build -o llamaseye ."
-```
-
-If the repo is not yet cloned:
-
-```sh
-ssh justin@justin-powerhouse "mkdir -p ~/Src && git clone https://github.com/WagnerJust/llamaseye ~/Src/llamaseye && cd ~/Src/llamaseye && go build -o llamaseye ."
-```
-
-After cloning, set up `.env`:
-
-```sh
-ssh justin@justin-powerhouse "cd ~/Src/llamaseye && cp example.env .env"
-# Then edit ~/Src/llamaseye/.env on the remote host to set LLAMA_BENCH_BIN, SWEEP_OUTPUT_DIR, etc.
-```
+---
 
 ## Phase Reference
 

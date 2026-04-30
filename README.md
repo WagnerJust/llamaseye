@@ -87,6 +87,16 @@ go install github.com/WagnerJust/llamaseye@latest
 
 The binary statically links all dependencies. No external tools are required at runtime except `llama-bench` itself.
 
+### For coding-agent users
+
+llamaseye ships an embedded operational skill (`skills/llamaseye.md`) that explains every flag, phase, and output to coding-agent tools. Install it once into your home directory so any project's agent can use it:
+
+```bash
+llamaseye install-skill --apply
+```
+
+This writes `~/.claude/skills/llamaseye/SKILL.md` (Claude Code) and `~/.agents/skills/llamaseye/SKILL.md` (cross-agent convention). Use `--target claude` or `--target agents` to install only one. Use `--local` to install into the current directory instead. Run `llamaseye install-skill --list` to see all targets.
+
 ---
 
 ## Dependencies

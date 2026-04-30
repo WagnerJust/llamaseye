@@ -8,5 +8,6 @@ Always read AGENTS.md before starting a task.
 
 ## Claude Code-Specific Notes
 
-- Skills are available in both `.agents/skills/` (cross-agent) and `.claude/skills/` (Claude Code native).
-- The `.claude/skills/` directory contains Claude Code-specific skill definitions with frontmatter triggers.
+- The canonical operational skill lives at `skills/llamaseye.md` and is embedded into the binary.
+- To make it discoverable to Claude Code, run `llamaseye install-skill --apply` once — that writes it to `~/.claude/skills/llamaseye/SKILL.md`.
+- `.claude/skills/` and `.agents/skills/` directories in this repo are gitignored. Anything placed there by `--local` installs is for local agent use and stays out of source control.
