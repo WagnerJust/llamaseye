@@ -1,0 +1,29 @@
+name: Flaky Test Analysis
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+jobs:
+  flaky:
+    name: Re-run tests to surface flakes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run tests with -count=10 to detect intermittents
+        run: |
+          set +e
+          go test -race -count=10 ./... | tee flaky-run.log
+          status=${PIPESTATUS[0]}
+          echo "exit_status=$status" >> "$GITHUB_OUTPUT"
+          exit $status
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-run-log
+          path: flaky-run.log
+          retention-days: 30

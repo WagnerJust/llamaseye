@@ -29,7 +29,7 @@ Every PR that changes behavior must update:
 - [ ] `CHANGELOG.md` — add an entry with a semver bump ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format)
 - [ ] `README.md` — if user-facing behavior changed
 - [ ] `docs/spec.md` — if phase behavior, JSONL schema, or output format changed
-- [ ] `.claude/skills/llamaseye/SKILL.md` — if flags, phases, or usage patterns changed
+- [ ] `skills/llamaseye.md` — if flags, phases, or usage patterns changed (this file is embedded into the binary and installed by `llamaseye install-skill`)
 
 Version bumps follow [Semantic Versioning](https://semver.org/):
 - **Patch** (`x.y.Z`) — bug fixes, cleanup, docs

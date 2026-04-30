@@ -50,6 +50,13 @@ func run(args []string) error {
 		}
 	}
 
+	// Subcommand: install-skill (writes skills/llamaseye.md into the
+	// directories that coding-agent tools read). Dispatched before the
+	// main flag parser since it has its own flag set.
+	if cmd.IsInstallSkillSubcommand(args) {
+		return cmd.RunInstallSkill(args[1:], os.Stdout, os.Stderr)
+	}
+
 	cfg, models, err := cmd.Parse(args, version)
 	if err != nil {
 		return err
