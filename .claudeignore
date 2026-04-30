@@ -1,0 +1,15 @@
+# Build artifacts
+dist/
+build/
+
+# Large result files
+results/*/raw/
+results/*/*.jsonl
+results/*/*.log
+
+# Dependencies
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -6,6 +6,25 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.7.7] — 2026-04-29
+
+### Added
+- Canonical agent instructions in `AGENTS.md` (single source of truth for AI agents in this repo). `CLAUDE.md`, `.cursorrules`, `.claudeignore`, `.github/copilot-instructions.md`, and `.gitmessage` point to or extend this canonical doc.
+- Cross-agent skills directory `.agents/skills/` for shared agent workflows.
+- `docs/llamaseye-vs-llama-benchy.md` — comparison/positioning doc against the sister tool.
+- CI now enforces a 60% coverage floor on every push/PR (`go test -coverprofile` + threshold check). Existing `lint` and new `go build ./...` step both gate merges.
+- New scheduled workflows: `coverage.yml` (weekly full coverage HTML artifact, Sun 07:00 UTC), `nightly-compliance.yml` (nightly `govulncheck`), `flaky-analysis.yml` (weekly `go test -count=10 -race` to surface intermittents, Mon 08:00 UTC).
+- `codecov.yml` declaring the 60% coverage target for project + patch.
+- `.github/ISSUE_TEMPLATE/feedback.md` for user feedback on tool behavior and output.
+
+### Changed
+- `AGENTS.md` Rules of Engagement: implementation plans and design notes go under `.local/plans/` or `.local/specs/` (gitignored), not `docs/`. `docs/spec.md` remains the canonical committed engineering doc.
+
+### Why
+Brings the repo to ACMM Level 3 readiness for AI-assisted development: a single canonical source of agent instructions, PR-time build/lint/coverage gates, scheduled compliance + coverage drift detection, and an explicit feedback channel. Codifies that ephemeral planning artifacts stay out of git so they don't accumulate in `docs/`.
+
+---
+
 ## [1.7.6] — 2026-04-11
 
 ### Fixed
